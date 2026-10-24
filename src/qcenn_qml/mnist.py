@@ -60,8 +60,8 @@ def fidelity_circuit(query, exemplar, iterations):
         raise ValueError("Invalid vectors or iterations")
     n = int(np.log2(len(query)))
     transform = QuantumCircuit(n)
-    transform.append(StatePreparation(query), list(range(n)))
-    transform.append(StatePreparation(exemplar).inverse(), list(range(n)))
+    transform.compose(StatePreparation(query).definition, qubits=list(range(n)), inplace=True)
+    transform.compose(StatePreparation(exemplar).inverse().definition, qubits=list(range(n)), inplace=True)
     qc = transform.copy()
     reflection = zero_reflection(n)
     for _ in range(iterations):
