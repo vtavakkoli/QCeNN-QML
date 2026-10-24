@@ -64,16 +64,16 @@ def memory_circuit(amplitudes, bits, order, query_context, amplify=0):
     width = bits * (order + 1)
     if len(amplitudes) != (1 << width):
         raise ValueError("Invalid quantum memory width")
-    preparation = StatePreparation(amplitudes)
+    preparation = StatePreparation(amplitudes).definition
     circuit = QuantumCircuit(width, width)
-    circuit.append(preparation, range(width))
+    circuit.compose(preparation, qubits=list(range(width)), inplace=True)
     oracle = basis_reflection(width, range(bits, width), query_context)
     reflection = zero_reflection(width)
     for _ in range(amplify):
         circuit.compose(oracle, inplace=True)
-        circuit.append(preparation.inverse(), range(width))
+        circuit.compose(preparation.inverse(), qubits=list(range(width)), inplace=True)
         circuit.compose(reflection, inplace=True)
-        circuit.append(preparation, range(width))
+        circuit.compose(preparation, qubits=list(range(width)), inplace=True)
     circuit.measure(range(width), range(width))
     return circuit
 
