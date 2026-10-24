@@ -48,12 +48,14 @@ def amplitude_preparation(amplitudes):
             if abs(theta) <= 1e-14:
                 continue
             flip = [q for i, q in enumerate(controls) if (prefix >> i) & 1 == 0]
-            qc.x(flip)
+            if flip:
+                qc.x(flip)
             if controls:
                 qc.mcry(theta, controls, target, None, mode="noancilla")
             else:
                 qc.ry(theta, target)
-            qc.x(flip)
+            if flip:
+                qc.x(flip)
     return qc
 
 def zero_reflection(num_qubits):
@@ -82,14 +84,16 @@ def basis_reflection(num_qubits, qubits, target_bits):
         raise ValueError("Invalid target")
     qc = QuantumCircuit(num_qubits)
     flips = [q for i, q in enumerate(qubits) if not (target_bits >> i) & 1]
-    qc.x(flips)
+    if flips:
+        qc.x(flips)
     if len(qubits) == 1:
         qc.z(qubits[0])
     else:
         qc.h(qubits[-1])
         qc.mcx(qubits[:-1], qubits[-1])
         qc.h(qubits[-1])
-    qc.x(flips)
+    if flips:
+        qc.x(flips)
     return qc
 
 
