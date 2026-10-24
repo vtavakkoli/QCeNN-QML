@@ -1,0 +1,17 @@
+name: Test quantum inference circuits
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e '.[test]'
+      - run: python -m pytest -q
+      - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir /tmp/mnist-smoke
+      - run: python -m qcenn_qml.smol135 --new-tokens 2 --shots 512 --output-dir /tmp/smol-smoke

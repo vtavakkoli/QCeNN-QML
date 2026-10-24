@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qcenn-qml"
+version = "0.1.0"
+description = "Quantum inference prototypes for MNIST and tiny autoregressive language modeling"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26,<3", "qiskit>=1.2,<3", "qiskit-aer>=0.15,<1", "pillow>=10"]
+
+[project.optional-dependencies]
+mnist = ["torch>=2.2", "torchvision>=0.17"]
+teacher = ["transformers>=4.45,<6", "torch>=2.2", "safetensors>=0.4"]
+test = ["pytest>=8", "scikit-learn>=1.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
