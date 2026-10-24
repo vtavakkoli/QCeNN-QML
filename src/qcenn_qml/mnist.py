@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import numpy as np
-from .quantum import sample_counts, unit_vector, zero_reflection
+from .quantum import sample_counts, unit_vector, zero_reflection, amplitude_preparation
 
 
 def image_amplitudes(image, side=8):
@@ -54,14 +54,13 @@ def select_exemplars(items, classes, count, side):
 def fidelity_circuit(query, exemplar, iterations):
     """Measure |<exemplar|query>|^2, or its coherent Grover polynomial."""
     from qiskit import QuantumCircuit
-    from qiskit.circuit.library import StatePreparation
     query, exemplar = unit_vector(query), unit_vector(exemplar)
     if len(query) != len(exemplar) or iterations < 0:
         raise ValueError("Invalid vectors or iterations")
     n = int(np.log2(len(query)))
     transform = QuantumCircuit(n)
-    transform.compose(StatePreparation(query).definition, qubits=list(range(n)), inplace=True)
-    transform.compose(StatePreparation(exemplar).inverse().definition, qubits=list(range(n)), inplace=True)
+    transform.compose(amplitude_preparation(query), inplace=True)
+    transform.compose(amplitude_preparation(exemplar).inverse(), inplace=True)
     qc = transform.copy()
     reflection = zero_reflection(n)
     for _ in range(iterations):
