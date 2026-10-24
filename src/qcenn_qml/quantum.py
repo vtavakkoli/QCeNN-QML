@@ -18,6 +18,44 @@ def unit_vector(values):
     return raw / norm
 
 
+
+def amplitude_preparation(amplitudes):
+    """Prepare real nonnegative amplitudes with explicit controlled RY rotations.
+
+    Applies a top-down binary probability tree. Unlike generic opaque
+    StatePreparation inverses, the circuit uses explicit unitary RY and
+    multi-controlled RY gates. It is exponentially costly in data qubits.
+    No classical prediction stage is involved.
+    """
+    from qiskit import QuantumCircuit
+    values = unit_vector(amplitudes)
+    if np.any(values < 0):
+        raise ValueError("This exact RY implementation requires nonnegative real amplitudes")
+    n = int(np.log2(len(values)))
+    qc = QuantumCircuit(n, name="load_nonnegative_amplitudes")
+    for target in range(n-1, -1, -1):
+        controls = list(range(target+1, n))
+        span = 1 << target
+        for prefix in range(1 << len(controls)):
+            lo = prefix * (2*span)
+            mid = lo + span
+            hi = mid + span
+            left = float(np.linalg.norm(values[lo:mid]))
+            right = float(np.linalg.norm(values[mid:hi]))
+            if left == 0 and right == 0:
+                continue
+            theta = float(2 * np.arctan2(right, left))
+            if abs(theta) <= 1e-14:
+                continue
+            flip = [q for i, q in enumerate(controls) if (prefix >> i) & 1 == 0]
+            qc.x(flip)
+            if controls:
+                qc.mcry(theta, controls, target, None, mode="noancilla")
+            else:
+                qc.ry(theta, target)
+            qc.x(flip)
+    return qc
+
 def zero_reflection(num_qubits):
     from qiskit import QuantumCircuit
     if num_qubits < 1:
