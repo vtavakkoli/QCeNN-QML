@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import re
 import numpy as np
-from .quantum import basis_reflection, sample_counts, unit_vector, zero_reflection
+from .quantum import basis_reflection, sample_counts, unit_vector, zero_reflection, amplitude_preparation
 
 MODEL_ID = "HuggingFaceTB/SmolLM2-135M"
 EXAMPLE_CORPUS = (
@@ -58,13 +58,12 @@ def build_memory_amplitudes(tokens, vocab, order=1, smoothing=.05):
 
 def memory_circuit(amplitudes, bits, order, query_context, amplify=0):
     from qiskit import QuantumCircuit
-    from qiskit.circuit.library import StatePreparation
     if not 0 <= amplify <= 3:
         raise ValueError("amplify must be 0..3")
     width = bits * (order + 1)
     if len(amplitudes) != (1 << width):
         raise ValueError("Invalid quantum memory width")
-    preparation = StatePreparation(amplitudes).definition
+    preparation = amplitude_preparation(amplitudes)
     circuit = QuantumCircuit(width, width)
     circuit.compose(preparation, qubits=list(range(width)), inplace=True)
     oracle = basis_reflection(width, range(bits, width), query_context)
