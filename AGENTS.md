@@ -28,6 +28,11 @@
 5. SmolLM2-135M feasibility study: validate and publish an explicit one-block operator map with honest encoding/query/readout complexity before contemplating 30 transformer layers / full vocabulary. Do not claim quantum execution of weights unless device jobs prove it.
 6. Only then add optional hardware backend and noise models with real backend IDs, shots, qubit connectivity, synthesis and cost budgets.
 
+## License and citation safeguards
+
+- New original QCeNN-QML material is released under the custom non-commercial research / paid-commercial license in LICENSE. Preserve non-commercial attribution, mandatory public-research citations, and the separate paid written commercial-license requirement in docs and package metadata. Never describe the current release as MIT or OSI open source.
+- Keep NOTICE.md and CITATION.cff synchronized when updating attribution or citations. Do not claim this change revokes the earlier MIT permissions for previously released copies. Preserve the independent QCeNN-MI and third-party license obligations.
+
 ## Engineering style
 
 Use Python modules, not a notebook-only implementation. Keep CLI entry points stable, seeded and reproducible, with JSON reports and pinned/tested dependency ranges. Do not implement an unnecessary framework or make smoke tests silently appear to be scientific results. Preserve source provenance, dataset identity and license requirements.

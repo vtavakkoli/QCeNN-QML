@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: >-
+  If you use QCeNN-QML in public research or report results obtained with it,
+  you must cite this software. Non-commercial use also requires attribution;
+  commercial use requires a separate paid written license. See LICENSE.
+type: software
+title: "QCeNN-QML: Quantum-Circuit Inference Prototypes for MNIST and Quantum Language Experiments"
+authors:
+  - family-names: Tavakkoli
+    given-names: Vahid
+repository-code: "https://github.com/vtavakkoli/QCeNN-QML"
+url: "https://github.com/vtavakkoli/QCeNN-QML"
+version: "0.1.0"
+year: 2026

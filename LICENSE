@@ -1,21 +1,121 @@
-MIT License
+QCeNN-QML NON-COMMERCIAL RESEARCH AND PAID COMMERCIAL LICENSE
+Version 1.0 — 25 October 2026
 
-Copyright (c) 2026 Vahid Tavakkoli
+Copyright (c) 2026 Vahid Tavakkoli. All rights reserved except as expressly licensed below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+IMPORTANT: This is a custom source-available license, not an OSI-approved
+open-source license. Non-commercial use requires attribution and, where
+applicable, a scholarly citation. Commercial use requires a separately
+negotiated, paid written license BEFORE such use begins.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Scope and covered material
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+"Covered Work" means the original source code, documentation, examples,
+and other copyrightable material supplied in the QCeNN-QML repository
+(https://github.com/vtavakkoli/QCeNN-QML) under this License, only to the
+extent the copyright holder has the right to license that material.
+Third-party software, dependencies, datasets, model weights, and code or
+material from QCeNN-MI remain governed by their respective licenses.
+This License applies to material distributed under it from 25 October
+2026 onward; see section 9 for prior MIT-licensed releases.
+
+2. Free permission for non-commercial use
+
+Subject to the conditions of this License, the copyright holder grants
+a worldwide, royalty-free, non-exclusive license to use, study, run,
+reproduce, modify, and redistribute the Covered Work solely for
+non-commercial personal, educational, or academic research purposes.
+
+A non-commercial use does not seek direct or indirect commercial
+advantage or financial compensation from the use of the Covered Work.
+Distribution of modifications is permitted only under this License,
+with its required notices and change disclosures preserved. No right to
+grant a commercial sublicense is provided by this section.
+
+3. Commercial use requires a paid license
+
+NO commercial use is permitted under the free grant in section 2.
+
+"Commercial use" includes, without limitation: use by or for a
+for-profit organization in its operations or research and development;
+incorporation into a product or customer deliverable; provision of a
+hosted service, API, or paid consultancy; monetized distribution; or
+other use intended to create direct or indirect business advantage.
+Commercial use may exist even where the particular project generates
+no revenue.
+
+Before starting commercial use, the prospective licensee must obtain a
+separate written commercial license from the copyright holder and pay
+the fees specified in that agreement. Merely paying or requesting a
+quote does not itself grant permission; the signed agreement controls
+commercial rights, scope, and price.
+
+Commercial licensing inquiries:
+https://github.com/vtavakkoli/QCeNN-QML
+
+4. Mandatory attribution and reference
+
+Every project that uses, incorporates, modifies, or redistributes the
+Covered Work under this License MUST retain this License and applicable
+copyright notices, and provide the following attribution in a
+reasonably accessible README, NOTICE, acknowledgments, or equivalent:
+
+    QCeNN-QML — Vahid Tavakkoli (2026)
+    https://github.com/vtavakkoli/QCeNN-QML
+
+For a standalone, unmodified local evaluation, keeping the included
+LICENSE, NOTICE.md, and CITATION.cff with the copy satisfies the
+attribution-record requirement. For public releases and distributed
+derivatives, place the credit visibly in the accompanying materials,
+identify the modifications, and do not imply endorsement.
+
+5. Mandatory citation for public research and reported results
+
+Any scholarly publication, preprint, thesis, dissertation, poster,
+public presentation, public benchmark, or technical report materially
+using the Covered Work or reporting results obtained with it MUST cite:
+
+    V. Tavakkoli, "QCeNN-QML: Quantum-Circuit Inference Prototypes
+    for MNIST and Quantum Language Experiments," software, 2026.
+    https://github.com/vtavakkoli/QCeNN-QML
+
+Use the repository's CITATION.cff where supported. In documents with
+bibliographies, include a conventional bibliography entry; otherwise,
+provide an equally clear reference with the author, title, and URL.
+Citation is additional to, not a replacement for, other conditions.
+
+6. Preservation, provenance, and third-party rights
+
+Keep this License, copyright notices, relevant attribution notices,
+and citation instructions with copies or substantial portions of the
+Covered Work. Clearly mark changes to modified versions. This License
+does not replace the QCeNN-MI license or any other third-party license.
+Any reuse of upstream material must separately comply with its license.
+
+7. No endorsement
+
+Attribution or permission does not authorize use of the copyright
+holder's name or marks to imply sponsorship, approval, or endorsement.
+
+8. Termination and disclaimer
+
+Rights under the non-commercial grant terminate automatically upon
+material noncompliance, but are reinstated if the violation is fully
+cured within 30 days of the licensee becoming aware of it. Separate
+commercial agreements may specify their own termination provisions.
+
+THE COVERED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW,
+THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGE, OR
+OTHER LIABILITY ARISING FROM OR RELATED TO THE COVERED WORK OR ITS USE.
+
+9. Earlier MIT-licensed versions
+
+Earlier versions or copies of QCeNN-QML lawfully distributed under the
+MIT License remain subject to their original MIT terms. This License
+does not revoke, amend, or restrict permissions already granted for
+those copies. Only eligible material released under this License is
+covered by the new restrictions.
+
+End of QCeNN-QML Non-Commercial Research and Paid Commercial License 1.0.

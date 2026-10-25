@@ -4,6 +4,19 @@
 
 This independent work is inspired by [QCeNN-MI](https://github.com/vtavakkoli/QCeNN-MI). Version 0.2 adds a **trainable local recurrent collision classifier** with persistent quantum memory and a measured quantum readout. It specializes the collision/reset idea locally; it does not implement the upstream matrix-inversion residual solver. The original `qcenn_qml.mnist` remains an exemplar-overlap / Grover polynomial baseline. Experimental quantum predictions come from measured circuits; data preparation, orchestration and readout are classical. Recurrent gate training uses classical optimization and is explicitly **hybrid**.
 
+## License, attribution, and commercial use
+
+**QCeNN-QML uses a custom source-available license, not an OSI-approved open-source license.** The current code is free for **non-commercial personal, educational, and academic research use**, provided the required attribution is included. **All commercial use requires a separately negotiated and paid written license before use**, including commercial research and development, internal business use, products, APIs, and consulting.
+
+**Mandatory project credit:**
+
+> QCeNN-QML — Vahid Tavakkoli (2026)  
+> https://github.com/vtavakkoli/QCeNN-QML
+
+If you publish research, benchmarks, presentations, or reports materially using this repository, you must also cite QCeNN-QML using [CITATION.cff](CITATION.cff). To request a commercial license and pricing, contact the copyright holder through [the GitHub repository](https://github.com/vtavakkoli/QCeNN-QML). No fixed price or automatic payment authorization is offered here.
+
+See [LICENSE](LICENSE) for legally controlling terms, [NOTICE.md](NOTICE.md) for attribution and upstream provenance, and [CITATION.cff](CITATION.cff) for the recommended software citation. Versions previously distributed under MIT retain their original MIT permissions; this change does not retroactively remove them.
+
 ## Installation
 
 Requires Python 3.10+.
@@ -80,6 +93,8 @@ Alternatively use --corpus-file to supply any text file. Report JSON truthfully 
 
 CI runs NumPy invariants, independent ideal statevector assertions, complete recurrent circuit/density cross-checks, memory/CPTP tests, seeded training/split reproducibility, and explicitly labeled **digits-proxy** and toy-language Aer smokes. All actual circuits run on **Qiskit Aer (classical simulation of quantum gates)**; no physical QPU test, runtime speedup, or SmolLM2 emulation is claimed. Reports are saved under the chosen output directory as report.json. Accuracy improvement must be established by the comparisons, not assumed from successful execution.
 
-## Attribution
+## Attribution and citation
 
-QCeNN-MI — Vahid Tavakkoli and Kabeh Mohsenzadegan (2026), https://github.com/vtavakkoli/QCeNN-MI. Upstream has a custom attribution/citation license; follow it when using or adapting that work. Newly authored code in this repository uses the MIT license and **does not relicense upstream code**. See [NOTICE.md](NOTICE.md).
+**QCeNN-QML software citation:** V. Tavakkoli, "QCeNN-QML: Quantum-Circuit Inference Prototypes for MNIST and Quantum Language Experiments," software, 2026, https://github.com/vtavakkoli/QCeNN-QML. Cite the software in all public research and results materially using it.
+
+**Upstream research inspiration:** QCeNN-MI — Vahid Tavakkoli and Kabeh Mohsenzadegan (2026), https://github.com/vtavakkoli/QCeNN-MI. Its separate custom license has its own mandatory attribution and citation conditions. This repository does **not** relicense upstream code or third-party dependencies. See [NOTICE.md](NOTICE.md).
