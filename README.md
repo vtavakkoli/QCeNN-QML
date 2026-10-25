@@ -98,3 +98,30 @@ CI runs NumPy invariants, independent ideal statevector assertions, complete rec
 **QCeNN-QML software citation:** V. Tavakkoli, "QCeNN-QML: Quantum-Circuit Inference Prototypes for MNIST and Quantum Language Experiments," software, 2026, https://github.com/vtavakkoli/QCeNN-QML. Cite the software in all public research and results materially using it.
 
 **Upstream research inspiration:** QCeNN-MI — Vahid Tavakkoli and Kabeh Mohsenzadegan (2026), https://github.com/vtavakkoli/QCeNN-MI. Its separate custom license has its own mandatory attribution and citation conditions. This repository does **not** relicense upstream code or third-party dependencies. See [NOTICE.md](NOTICE.md).
+
+
+## Quantum masked diffusion and engineered noise (research prototype)
+
+Third independent track: a **three-token conditional masked-denoising circuit**
+using 9 qubits (six data/context, two environment, one flag).
+A mask-replacement forward channel and recurrent conditional replacement
+channels are executed with quantum-controlled swaps and environment resets.
+Quantum context-controlled token amplitudes come from a **classically counted
+tiny toy corpus**, not from learned quantum neural-network weights. The
+data register is not measured and classically reconstructed between updates.
+This is **not a trained diffusion LLM**, not an implementation of the exact
+QCeNN-MI inversion solver, and not a demonstration of benefit from
+uncontrolled physical-device noise.
+
+    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --output-dir results/diffusion/ideal
+    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --readout-error 0.05 --output-dir results/diffusion/noisy
+
+Each run saves report.json and report.md with measured conditional token
+frequencies, independent channel-theory checks, shots, and compiled depths.
+Separate measured experiments can be merged using:
+
+    python -m qcenn_qml.report --output-dir results/ci/summary
+
+See [the detailed quantum-noise research protocol](docs/QUANTUM_DIFFUSION.md).
+CI uploads an artifact named qcenn-qml-all-simulator-results with all
+three smoke experiment reports and the combined summary.

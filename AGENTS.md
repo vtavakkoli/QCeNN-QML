@@ -36,3 +36,21 @@
 ## Engineering style
 
 Use Python modules, not a notebook-only implementation. Keep CLI entry points stable, seeded and reproducible, with JSON reports and pinned/tested dependency ranges. Do not implement an unnecessary framework or make smoke tests silently appear to be scientific results. Preserve source provenance, dataset identity and license requirements.
+
+
+## Quantum masked diffusion track
+
+- Use src/qcenn_qml/diffusion/ and docs/QUANTUM_DIFFUSION.md as the new toy
+  quantum denoising baseline. It uses 3-token sequences and controlled
+  replacement channels with ancilla resets.
+- The toy corpus is counted classically and quantum-controlled amplitude
+  loaders encode the conditional distributions. This is NOT quantum-trained
+  diffusion or natural-language understanding.
+- Keep noisy forward masking beta distinct from readout bit-flip noise or
+  uncontrolled quantum-device errors; an improvement over fully masked
+  inputs alone is not evidence that physical noise improves modeling.
+- Verify CPTP, target preservation between resets, conditional expectation,
+  no test-label-conditioned reverse gates, and ideal-versus-noisy
+  reproducibility. Benchmark non-recurrent, classical frequency, and
+  independent quantum baselines at matched resources.
+- Continue honoring the active custom non-commercial/paid-commercial license.
