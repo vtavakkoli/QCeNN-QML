@@ -15,3 +15,13 @@ jobs:
       - run: python -m pytest -q
       - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir /tmp/mnist-smoke
       - run: python -m qcenn_qml.smol135 --new-tokens 2 --shots 512 --output-dir /tmp/smol-smoke
+      - name: Ten-class recurrent CLI smoke (digits proxy, not MNIST)
+        run: >-
+          python -m qcenn_qml.recurrent_mnist --dataset digits-proxy --seeds 3 4
+          --train-per-class 1 --validation-per-class 1 --test-per-class 1
+          --exemplars-per-class 1 --side 4 --training-steps 1 --shots 64
+          --skip-quantum-overlap --include-reset-control --output-dir /tmp/recurrent-smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recurrent-digits-proxy-smoke
+          path: /tmp/recurrent-smoke
