@@ -1,8 +1,8 @@
 # QCeNN-QML
 
-**Quantum-circuit inference prototypes** for MNIST and a tiny SmolLM2-135M-inspired autoregressive language experiment. See [AGENTS.md](AGENTS.md) for the mandatory research rules and [the roadmap](docs/RESEARCH_ROADMAP.md).
+**Recurrent quantum MNIST classification**, quantum exemplar baselines, and a tiny SmolLM2-135M-inspired autoregressive language experiment. See [AGENTS.md](AGENTS.md) for the research rules and [the roadmap](docs/RESEARCH_ROADMAP.md).
 
-This independent work is inspired by [QCeNN-MI](https://github.com/vtavakkoli/QCeNN-MI). It **does not yet implement the upstream recurrent collision channel**: the implemented quantum classifier is an exemplar-overlap / Grover polynomial baseline, not a trained quantum neural network. All predictions in the experimental inference paths come from measured quantum circuits, but data preparation, orchestration and readout are classical.
+This independent work is inspired by [QCeNN-MI](https://github.com/vtavakkoli/QCeNN-MI). Version 0.2 adds a **trainable local recurrent collision classifier** with persistent quantum memory and a measured quantum readout. It specializes the collision/reset idea locally; it does not implement the upstream matrix-inversion residual solver. The original `qcenn_qml.mnist` remains an exemplar-overlap / Grover polynomial baseline. Experimental quantum predictions come from measured circuits; data preparation, orchestration and readout are classical. Recurrent gate training uses classical optimization and is explicitly **hybrid**.
 
 ## Installation
 
@@ -11,6 +11,37 @@ Requires Python 3.10+.
     git clone https://github.com/vtavakkoli/QCeNN-QML.git
     cd QCeNN-QML
     python -m pip install -e '.[mnist,test]'
+
+## Recurrent ten-class MNIST (v0.2)
+
+Small genuine-MNIST end-to-end check:
+
+    python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --train-per-class 2 --validation-per-class 1 --test-per-class 1 --exemplars-per-class 1 --training-steps 5 --shots 256 --output-dir results/recurrent-smoke
+
+Larger comparison across three seeded train/validation/test selections:
+
+    python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 43 44 --train-per-class 100 --validation-per-class 20 --test-per-class 20 --exemplars-per-class 2 --training-steps 500 --shots 1024 --include-reset-control --output-dir results/recurrent-comparison
+
+The model streams 2x2 image patches through four memory qubits, local shared
+RY/RZ/RXX/RZZ gates and one reset/reused environment qubit. Nineteen quantum
+gate parameters are trained with classical SPSA-Adam on a reduced-density
+simulator. Final test predictions use finite-shot circuit measurements only;
+there is no trained classical prediction head. Basis outcomes 10..15 are
+rejected and the accepted-shot fraction is reported.
+
+Comparators include measured quantum exemplar fidelity and Grover scoring,
+exact classical versions, normalized classical centroids, and an optional
+independently trained memory-reset control. Reports preserve split IDs and
+data hashes, source/package versions, model parameters, raw counts, Wilson and
+paired-bootstrap intervals, training traces and full native resource totals.
+Quantum overlap methods have more circuits/shots than the recurrent model;
+costs are reported rather than claiming equal resources or quantum advantage.
+Always use a fresh output directory. Original MNIST downloads use checksummed
+IDX archives; PyTorch is not required. Full details and model reloading are in
+[the recurrent experiment protocol](docs/RECURRENT_MNIST.md).
+The [archived two-seed original-MNIST smoke](evidence/recurrent-mnist-smoke/README.md)
+records the initial recurrent model's weak accuracy alongside every comparator;
+it establishes execution and reproducibility, with no accuracy improvement.
 
 ## Two Python commands for genuine MNIST
 
@@ -22,7 +53,7 @@ Ten classes, coherent Grover polynomial response (may perform worse than baselin
 
     python -m qcenn_qml.mnist --dataset mnist --classes 0123456789 --train-per-class 2 --test-per-class 5 --shots 1024 --iterations 1 --output-dir results/mnist-ten
 
-The torchvision MNIST dataset is downloaded automatically as original 28x28 images; it is resized to 8x8, normalized, and amplitude-loaded into six quantum data qubits. A per-exemplar quantum fidelity circuit uses U_exemplar inverse times U_image, and the result is estimated through finite-shot zero-state measurements in Qiskit Aer. The optional coherent Grover recurrence is a polynomial in overlap probability, but **nonmonotonic**; the same samples/shots should be evaluated with iterations 0 and 1 for any research comparison. No trainable classical prediction head or neural weights are present, but class prototypes are stored classically and class choice uses a classical argmax. Dense state preparation has real cost. Very small samples in these commands are smoke experiments, not publication-quality scores.
+The original MNIST dataset is downloaded automatically as checksummed 28x28 IDX images; it is resized to 8x8, normalized, and amplitude-loaded into six quantum data qubits. A per-exemplar quantum fidelity circuit uses U_exemplar inverse times U_image, and the result is estimated through finite-shot zero-state measurements in Qiskit Aer. The optional coherent Grover recurrence is a polynomial in overlap probability, but **nonmonotonic**; the same samples/shots should be evaluated with iterations 0 and 1 for any research comparison. This baseline has no neural weights; class prototypes are stored classically and class choice uses a classical argmax. Dense state preparation has real cost. Very small samples in these commands are smoke experiments, not publication-quality scores.
 
 Offline CI alternative (NOT genuine MNIST; clearly identified in output):
 
@@ -47,7 +78,7 @@ Alternatively use --corpus-file to supply any text file. Report JSON truthfully 
 
     python -m pytest -q
 
-CI runs the NumPy invariant tests, independent ideal quantum statevector assertions, a small sklearn **digits-proxy** Aer smoke, and the quantum toy-language Aer smoke. All actual circuits run on **Qiskit Aer (classical simulation of quantum gates)**; no physical QPU test, runtime speedup, or SmolLM2 emulation is claimed. Reports are saved under the chosen output directory as report.json. The initial quantum experiments are intended to establish baselines before porting QCeNN-MI recurrent/polynomial channel methods.
+CI runs NumPy invariants, independent ideal statevector assertions, complete recurrent circuit/density cross-checks, memory/CPTP tests, seeded training/split reproducibility, and explicitly labeled **digits-proxy** and toy-language Aer smokes. All actual circuits run on **Qiskit Aer (classical simulation of quantum gates)**; no physical QPU test, runtime speedup, or SmolLM2 emulation is claimed. Reports are saved under the chosen output directory as report.json. Accuracy improvement must be established by the comparisons, not assumed from successful execution.
 
 ## Attribution
 

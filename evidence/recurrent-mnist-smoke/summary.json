@@ -1,0 +1,431 @@
+{
+  "scope": "Small original-MNIST execution check, not a publication-quality accuracy study",
+  "classes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "is_real_mnist": true,
+  "physical_qpu_tested": false,
+  "training_is_hybrid": true,
+  "configuration": {
+    "dataset": "mnist",
+    "seeds": [
+      42,
+      43
+    ],
+    "train_per_class": 20,
+    "validation_per_class": 5,
+    "test_per_class": 2,
+    "exemplars_per_class": 1,
+    "side": 8,
+    "training_steps": 150,
+    "batch_size": 32,
+    "learning_rate": 0.04,
+    "validation_interval": 25,
+    "shots": 1024,
+    "overlap_iterations": [
+      0,
+      1
+    ],
+    "skip_quantum_overlap": false,
+    "include_reset_control": true,
+    "data_root": "data",
+    "no_download": false
+  },
+  "source": {
+    "python": "3.12.14",
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+    "packages": {
+      "numpy": "2.3.5",
+      "qiskit": "2.6.1",
+      "qiskit-aer": "0.18.0",
+      "Pillow": "12.3.0",
+      "scikit-learn": "1.8.0"
+    },
+    "git_commit": "6bf893a76a9407c449173d474a122200f734e6ad",
+    "git_dirty": true,
+    "source_sha256": {
+      "src/qcenn_qml/__init__.py": "9f48562a88ba53affcb4537868a7b52c4c1125aefd9f8ea7e8dedcbf51e31f9d",
+      "src/qcenn_qml/mnist.py": "e87b03ffec18513aa569fb32294f70944c5b4f6c4ee4cd4b6a7ad1277c1d7d58",
+      "src/qcenn_qml/mnist_data.py": "6ffbc5b2cbc2620dd901725b64f0a2d9589733980194ad734749f187286f6b8d",
+      "src/qcenn_qml/quantum.py": "dd93d7944c5ace5d1d83b5d4dd72e776fa40faa24ee67581dd633af16492f85a",
+      "src/qcenn_qml/recurrent.py": "40eedaff5223b52a6c775ebb1e631e51e8a15c5e121a0fe8904e42870fc8886c",
+      "src/qcenn_qml/recurrent_mnist.py": "5513e920ffe1d0fc91bd7a83802a4ab4124ec9eccf79ec5c777e0402928ea469",
+      "src/qcenn_qml/smol135.py": "efc8f3a90ef41dffdb079abd53c54b1a322d39cb730201e956b9488ce30f9e4c",
+      "pyproject.toml": "e9ac320abc9d9ba8b3c8c8a008c7e0c18a765ae8b63c1fb11302ff481d185fa2"
+    }
+  },
+  "aggregate": {
+    "recurrent": {
+      "seeds": 2,
+      "accuracy_mean": 0.125,
+      "accuracy_std_across_seeds": 0.03535533905932737,
+      "accuracy_by_seed": [
+        0.15,
+        0.1
+      ]
+    },
+    "reset_control": {
+      "seeds": 2,
+      "accuracy_mean": 0.07500000000000001,
+      "accuracy_std_across_seeds": 0.03535533905932738,
+      "accuracy_by_seed": [
+        0.1,
+        0.05
+      ]
+    },
+    "classical_centroid": {
+      "seeds": 2,
+      "accuracy_mean": 0.875,
+      "accuracy_std_across_seeds": 0.10606601717798207,
+      "accuracy_by_seed": [
+        0.95,
+        0.8
+      ]
+    },
+    "classical_overlap_k0": {
+      "seeds": 2,
+      "accuracy_mean": 0.575,
+      "accuracy_std_across_seeds": 0.03535533905932733,
+      "accuracy_by_seed": [
+        0.6,
+        0.55
+      ]
+    },
+    "quantum_overlap_k0": {
+      "seeds": 2,
+      "accuracy_mean": 0.575,
+      "accuracy_std_across_seeds": 0.03535533905932733,
+      "accuracy_by_seed": [
+        0.6,
+        0.55
+      ]
+    },
+    "classical_overlap_k1": {
+      "seeds": 2,
+      "accuracy_mean": 0.0,
+      "accuracy_std_across_seeds": 0.0,
+      "accuracy_by_seed": [
+        0.0,
+        0.0
+      ]
+    },
+    "quantum_overlap_k1": {
+      "seeds": 2,
+      "accuracy_mean": 0.0,
+      "accuracy_std_across_seeds": 0.0,
+      "accuracy_by_seed": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "runs": [
+    {
+      "seed": 42,
+      "methods": {
+        "recurrent": {
+          "n": 20,
+          "accuracy": 0.15,
+          "accuracy_wilson_95": [
+            0.052368745896216595,
+            0.36041886474075696
+          ],
+          "accepted_shot_fraction": 0.801513671875,
+          "resources": {
+            "compiled_circuits": 20,
+            "total_shots": 20480,
+            "qubits_max": 5,
+            "depth_mean": 1138.0,
+            "depth_max": 1138,
+            "cx_per_circuit_mean": 451.0,
+            "cx_shot_weighted_total": 9236480,
+            "reset_shot_weighted_total": 1310720,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 0.0625779180002155,
+            "compilation_seconds": 0.16276006799989773,
+            "sampling_seconds": 1.0449844380000286
+          }
+        },
+        "reset_control": {
+          "n": 20,
+          "accuracy": 0.1,
+          "accuracy_wilson_95": [
+            0.027866481213768224,
+            0.3010336452284873
+          ],
+          "accepted_shot_fraction": 0.8634765625,
+          "resources": {
+            "compiled_circuits": 20,
+            "total_shots": 20480,
+            "qubits_max": 5,
+            "depth_mean": 103.0,
+            "depth_max": 103,
+            "cx_per_circuit_mean": 31.0,
+            "cx_shot_weighted_total": 634880,
+            "reset_shot_weighted_total": 81920,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 0.03411705999997139,
+            "compilation_seconds": 0.11367045199995118,
+            "sampling_seconds": 0.12365958700002011
+          }
+        },
+        "classical_centroid": {
+          "n": 20,
+          "accuracy": 0.95,
+          "accuracy_wilson_95": [
+            0.763868806553258,
+            0.9911185511992047
+          ]
+        },
+        "classical_overlap_k0": {
+          "n": 20,
+          "accuracy": 0.6,
+          "accuracy_wilson_95": [
+            0.3865815007622531,
+            0.781193467627183
+          ]
+        },
+        "quantum_overlap_k0": {
+          "n": 20,
+          "accuracy": 0.6,
+          "accuracy_wilson_95": [
+            0.3865815007622531,
+            0.781193467627183
+          ],
+          "accepted_shot_fraction": 1.0,
+          "resources": {
+            "compiled_circuits": 200,
+            "total_shots": 204800,
+            "qubits_max": 6,
+            "depth_mean": 583.0,
+            "depth_max": 583,
+            "cx_per_circuit_mean": 122.0,
+            "cx_shot_weighted_total": 24985600,
+            "reset_shot_weighted_total": 0,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 4.511426374999928,
+            "compilation_seconds": 7.0509878170000775,
+            "sampling_seconds": 11.147461668999995
+          }
+        },
+        "classical_overlap_k1": {
+          "n": 20,
+          "accuracy": 0.0,
+          "accuracy_wilson_95": [
+            0.0,
+            0.16112515805281938
+          ]
+        },
+        "quantum_overlap_k1": {
+          "n": 20,
+          "accuracy": 0.0,
+          "accuracy_wilson_95": [
+            0.0,
+            0.16112515805281938
+          ],
+          "accepted_shot_fraction": 1.0,
+          "resources": {
+            "compiled_circuits": 200,
+            "total_shots": 204800,
+            "qubits_max": 6,
+            "depth_mean": 1959.0,
+            "depth_max": 1959,
+            "cx_per_circuit_mean": 530.0,
+            "cx_shot_weighted_total": 108544000,
+            "reset_shot_weighted_total": 0,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 6.212124544000062,
+            "compilation_seconds": 3.7043317899999693,
+            "sampling_seconds": 25.282001648999994
+          }
+        }
+      }
+    },
+    {
+      "seed": 43,
+      "methods": {
+        "recurrent": {
+          "n": 20,
+          "accuracy": 0.1,
+          "accuracy_wilson_95": [
+            0.027866481213768224,
+            0.3010336452284873
+          ],
+          "accepted_shot_fraction": 0.633056640625,
+          "resources": {
+            "compiled_circuits": 20,
+            "total_shots": 20480,
+            "qubits_max": 5,
+            "depth_mean": 1138.0,
+            "depth_max": 1138,
+            "cx_per_circuit_mean": 451.0,
+            "cx_shot_weighted_total": 9236480,
+            "reset_shot_weighted_total": 1310720,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 0.13318542199999683,
+            "compilation_seconds": 0.26732218999995894,
+            "sampling_seconds": 1.1014295370000582
+          }
+        },
+        "reset_control": {
+          "n": 20,
+          "accuracy": 0.05,
+          "accuracy_wilson_95": [
+            0.008881448800795402,
+            0.23613119344674205
+          ],
+          "accepted_shot_fraction": 0.887939453125,
+          "resources": {
+            "compiled_circuits": 20,
+            "total_shots": 20480,
+            "qubits_max": 5,
+            "depth_mean": 103.0,
+            "depth_max": 103,
+            "cx_per_circuit_mean": 31.0,
+            "cx_shot_weighted_total": 634880,
+            "reset_shot_weighted_total": 81920,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 0.012250730000005206,
+            "compilation_seconds": 0.07098839000013868,
+            "sampling_seconds": 0.1758395770000334
+          }
+        },
+        "classical_centroid": {
+          "n": 20,
+          "accuracy": 0.8,
+          "accuracy_wilson_95": [
+            0.5839825677481064,
+            0.919342337420202
+          ]
+        },
+        "classical_overlap_k0": {
+          "n": 20,
+          "accuracy": 0.55,
+          "accuracy_wilson_95": [
+            0.34208534245034233,
+            0.7418021417443759
+          ]
+        },
+        "quantum_overlap_k0": {
+          "n": 20,
+          "accuracy": 0.55,
+          "accuracy_wilson_95": [
+            0.34208534245034233,
+            0.7418021417443759
+          ],
+          "accepted_shot_fraction": 1.0,
+          "resources": {
+            "compiled_circuits": 200,
+            "total_shots": 204800,
+            "qubits_max": 6,
+            "depth_mean": 583.0,
+            "depth_max": 583,
+            "cx_per_circuit_mean": 122.0,
+            "cx_shot_weighted_total": 24985600,
+            "reset_shot_weighted_total": 0,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 6.623250811000162,
+            "compilation_seconds": 1.3802613040002143,
+            "sampling_seconds": 10.766699122000091
+          }
+        },
+        "classical_overlap_k1": {
+          "n": 20,
+          "accuracy": 0.0,
+          "accuracy_wilson_95": [
+            0.0,
+            0.16112515805281938
+          ]
+        },
+        "quantum_overlap_k1": {
+          "n": 20,
+          "accuracy": 0.0,
+          "accuracy_wilson_95": [
+            0.0,
+            0.16112515805281938
+          ],
+          "accepted_shot_fraction": 1.0,
+          "resources": {
+            "compiled_circuits": 200,
+            "total_shots": 204800,
+            "qubits_max": 6,
+            "depth_mean": 1959.0,
+            "depth_max": 1959,
+            "cx_per_circuit_mean": 530.0,
+            "cx_shot_weighted_total": 108544000,
+            "reset_shot_weighted_total": 0,
+            "native_basis": [
+              "rz",
+              "sx",
+              "x",
+              "cx",
+              "reset",
+              "measure"
+            ],
+            "circuit_construction_seconds": 5.98941759399986,
+            "compilation_seconds": 4.716470556000104,
+            "sampling_seconds": 17.715025097999614
+          }
+        }
+      }
+    }
+  ]
+}

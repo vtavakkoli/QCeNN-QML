@@ -3,6 +3,7 @@ import pytest
 pytest.importorskip("qiskit")
 from qiskit.quantum_info import Statevector
 from qcenn_qml.mnist import fidelity_circuit
+from qcenn_qml.quantum import amplitude_preparation
 from qcenn_qml.smol135 import (
     memory_circuit, build_memory_amplitudes,
     create_vocabulary, tokenize, encode_tokens, context_integer,
@@ -13,6 +14,22 @@ def state(circuit):
     circuit = circuit.copy()
     circuit.remove_final_measurements()
     return np.asarray(Statevector.from_instruction(circuit).data)
+
+
+@pytest.mark.parametrize("width", [1, 2, 4, 6])
+def test_multiplexed_amplitudes_and_inverse(width):
+    rng = np.random.default_rng(width)
+    for sparse in (False, True):
+        values = rng.random(1 << width)
+        if sparse:
+            values[1::2] = 0
+        values /= np.linalg.norm(values)
+        preparation = amplitude_preparation(values)
+        np.testing.assert_allclose(Statevector.from_instruction(preparation).data, values, atol=2e-13)
+        identity = preparation.compose(preparation.inverse())
+        expected = np.zeros(1 << width)
+        expected[0] = 1
+        np.testing.assert_allclose(Statevector.from_instruction(identity).data, expected, atol=2e-13)
 
 
 def test_quantum_fidelity_extremes():

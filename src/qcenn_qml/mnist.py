@@ -34,9 +34,10 @@ def load_samples(dataset, train, root):
         return
     if dataset != "mnist":
         raise ValueError("Expected mnist or digits-proxy")
-    from torchvision.datasets import MNIST
-    for image, label in MNIST(root=str(root), train=train, download=True):
-        yield np.asarray(image, dtype=np.uint8), int(label)
+    from .mnist_data import load_mnist
+    images, labels = load_mnist(root, train=train)
+    for image, label in zip(images, labels, strict=True):
+        yield image, int(label)
 
 
 def select_exemplars(items, classes, count, side):

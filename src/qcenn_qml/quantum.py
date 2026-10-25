@@ -22,12 +22,14 @@ def unit_vector(values):
 def amplitude_preparation(amplitudes):
     """Prepare real nonnegative amplitudes with explicit controlled RY rotations.
 
-    Applies a top-down binary probability tree. Unlike generic opaque
-    StatePreparation inverses, the circuit uses explicit unitary RY and
-    multi-controlled RY gates. It is exponentially costly in data qubits.
+    Applies a top-down binary probability tree with uniformly controlled RY
+    multiplexors, decomposed into explicit RY/CX gates. Packing all prefixes
+    into a multiplexor avoids synthesizing a separate multi-controlled gate
+    for each prefix. Dense loading still costs exponentially in data qubits.
     No classical prediction stage is involved.
     """
     from qiskit import QuantumCircuit
+    from qiskit.circuit.library import UCRYGate
     values = unit_vector(amplitudes)
     if np.any(values < 0):
         raise ValueError("This exact RY implementation requires nonnegative real amplitudes")
@@ -36,6 +38,7 @@ def amplitude_preparation(amplitudes):
     for target in range(n-1, -1, -1):
         controls = list(range(target+1, n))
         span = 1 << target
+        angles = []
         for prefix in range(1 << len(controls)):
             lo = prefix * (2*span)
             mid = lo + span
@@ -43,19 +46,11 @@ def amplitude_preparation(amplitudes):
             left = float(np.linalg.norm(values[lo:mid]))
             right = float(np.linalg.norm(values[mid:hi]))
             if left == 0 and right == 0:
-                continue
-            theta = float(2 * np.arctan2(right, left))
-            if abs(theta) <= 1e-14:
-                continue
-            flip = [q for i, q in enumerate(controls) if (prefix >> i) & 1 == 0]
-            if flip:
-                qc.x(flip)
-            if controls:
-                qc.mcry(theta, controls, target, None, mode="noancilla")
+                angles.append(0.)
             else:
-                qc.ry(theta, target)
-            if flip:
-                qc.x(flip)
+                angles.append(float(2 * np.arctan2(right, left)))
+        qc.append(UCRYGate(angles), [target, *controls])
+    qc = qc.decompose()
     return qc
 
 def zero_reflection(num_qubits):
