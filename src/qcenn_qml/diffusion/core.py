@@ -83,25 +83,46 @@ def _flag_swap(qc, probability, target, environment, flag):
 
 
 def controlled_token_loader(qc, table, context=(0,1,2,3), ancillas=(6,7)):
-    """Quantum context-controlled memory amplitude loading, not CPU lookup.
+    """Context-controlled quantum distribution, synthesized from RY gates.
 
-    Same unitary is applied to every input. This synthesizes 16
-    multi-controlled 2-qubit state preparations, one per possible context.
+    For each of 16 context basis states, apply controlled rotations that
+    prepare sqrt(p0)|00>+sqrt(p1)|01>+sqrt(p2)|10>+sqrt(p3)|11>.
+    The gate sequence is shared across all inputs; no CPU conditional lookup
+    determines the output at prediction time.
     """
-    from ..quantum import amplitude_preparation
+    from qiskit.circuit.library import RYGate
     if np.shape(table) != (16,4):
         raise ValueError("Expected sixteen conditional distributions")
+    controls = list(context)
+    low, high = ancillas
     for c in range(16):
-        probabilities = np.asarray(table[c],dtype=float)
+        probabilities = np.asarray(table[c], dtype=float)
         if np.any(probabilities < 0) or not np.isclose(probabilities.sum(),1.0):
             raise ValueError("Invalid conditional probability row")
-        prep = amplitude_preparation(np.sqrt(probabilities)).to_gate()
-        zeros = [q for j,q in enumerate(context) if not (c >> j)&1]
-        if zeros:
-            qc.x(zeros)
-        qc.append(prep.control(4), list(context)+list(ancillas))
-        if zeros:
-            qc.x(zeros)
+        flips = [q for j,q in enumerate(controls) if not (c >> j) & 1]
+        if flips:
+            qc.x(flips)
+        left = float(np.sqrt(probabilities[0]+probabilities[1]))
+        right = float(np.sqrt(probabilities[2]+probabilities[3]))
+        theta_high = float(2*np.arctan2(right,left))
+        if abs(theta_high) > 1e-14:
+            qc.append(RYGate(theta_high).control(len(controls)), controls+[high])
+        # Conditional probability of low bit when high bit = 0.
+        theta_low0 = float(2*np.arctan2(np.sqrt(probabilities[1]),
+                                       np.sqrt(probabilities[0])))
+        if abs(theta_low0) > 1e-14:
+            qc.x(high)
+            qc.append(RYGate(theta_low0).control(len(controls)+1),
+                      controls+[high,low])
+            qc.x(high)
+        # Conditional probability of low bit when high bit = 1.
+        theta_low1 = float(2*np.arctan2(np.sqrt(probabilities[3]),
+                                       np.sqrt(probabilities[2])))
+        if abs(theta_low1) > 1e-14:
+            qc.append(RYGate(theta_low1).control(len(controls)+1),
+                      controls+[high,low])
+        if flips:
+            qc.x(flips)
 
 
 def denoising_circuit(left, original, right, *, table, beta=1.0,
