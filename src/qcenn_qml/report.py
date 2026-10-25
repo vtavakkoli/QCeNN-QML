@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 
-def build(mnist, smol, diffusion, output_dir):
+def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None):
     sources = {"mnist":mnist, "smol":smol, "diffusion":diffusion}
+    if diffusion_noisy:
+        sources["diffusion_noisy"] = diffusion_noisy
     found,missing={},[]
     for kind,source in sources.items():
         path=Path(source)
@@ -48,6 +50,18 @@ def build(mnist, smol, diffusion, output_dir):
         for k,item in x.get("results",{}).items():
             lines.append(f"| {k} | {item['measured_correct_token_probability']:.4f} | {item['independent_ideal_probability_mean']:.4f} |")
         lines+=["","- Not a trained quantum diffusion LLM or a reproduced upstream QCeNN-MI solver.",""]
+    if "diffusion_noisy" in found:
+        x=found["diffusion_noisy"]
+        lines+=["## Readout bit-flip noise comparison","",
+                f"- Simulated readout error per measured bit: {x.get('readout_bitflip_probability')}.",
+                "| Steps | Measured clean-token frequency (noisy) | Ideal-readout result |",
+                "|---:|---:|---:|"]
+        baseline=found.get("diffusion",{}).get("results",{})
+        for k,item in x.get("results",{}).items():
+            ref=baseline.get(k,{}).get("measured_correct_token_probability")
+            lines.append(f"| {k} | {item['measured_correct_token_probability']:.4f} | "
+                         + (f"{ref:.4f}" if ref is not None else "not run") + " |")
+        lines+=["","Readout flips are a measurement-error model, not a beneficial denoising resource.",""]
     if missing:lines+=["## Experiments not executed here",""]+["- "+p for p in missing]+[""]
     lines+=["## Conclusion","",
             "All experiments are feasibility demonstrations. They do not establish speedup, advantage, physically executed noise benefits, or a full 135M-parameter quantum language model.",""]
@@ -62,6 +76,7 @@ def main(argv=None):
     parser.add_argument("--smol",default="results/ci/smol/report.json")
     parser.add_argument("--diffusion",default="results/ci/diffusion/report.json")
     parser.add_argument("--output-dir",default="results/ci/summary")
+    parser.add_argument("--diffusion-noisy",default=None)
     return build(**vars(parser.parse_args(argv)))
 
 if __name__=="__main__":
