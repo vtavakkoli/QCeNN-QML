@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "date": "2026-10-25",
+  "evidence_run_id": 40178235764,
+  "source_commit": "f12610b4dbab9ec2b21ff885359850ecb8f608d7",
+  "physical_qpu": false,
+  "simulator": "Qiskit Aer",
+  "training_sequences": 36,
+  "heldout_sequences": 12,
+  "evaluated_sequences": 4,
+  "shots_per_case": 256,
+  "qubits": 9,
+  "beta": 1,
+  "eta": 0.65,
+  "readout_noise_per_bit": [
+    0,
+    0.05
+  ],
+  "steps": [
+    0,
+    1,
+    3
+  ],
+  "diffusion": {
+    "ideal": {
+      "0": {
+        "observed": 0,
+        "analytic": 0,
+        "depth": 3
+      },
+      "1": {
+        "observed": 0.62890625,
+        "analytic": 0.615718438538206,
+        "depth": 1781
+      },
+      "3": {
+        "observed": 0.8828125,
+        "analytic": 0.9066454007475082,
+        "depth": 5337
+      }
+    },
+    "readout_noise_0p05": {
+      "0": {
+        "observed": 0.0322265625,
+        "depth": 9
+      },
+      "1": {
+        "observed": 0.57421875,
+        "depth": 2675
+      },
+      "3": {
+        "observed": 0.8076171875,
+        "depth": 8007
+      }
+    }
+  },
+  "original_mnist_archived": {
+    "dataset": "mnist",
+    "seeds": [
+      42,
+      43
+    ],
+    "tested_per_seed": 20,
+    "recurrent_accuracy": 0.125,
+    "quantum_exemplar_k0": 0.575,
+    "quantum_exemplar_k1": 0,
+    "classical_centroid": 0.875
+  },
+  "smol_toy": {
+    "source": "built_in_toy_corpus",
+    "quantum_transformer_135m": false,
+    "generated_text": "sat on",
+    "qubits": 6
+  },
+  "test_suite_passed": 29
+}
