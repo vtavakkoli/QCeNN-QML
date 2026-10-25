@@ -10,5 +10,4 @@ authors:
     given-names: Vahid
 repository-code: "https://github.com/vtavakkoli/QCeNN-QML"
 url: "https://github.com/vtavakkoli/QCeNN-QML"
-version: "0.1.0"
-year: 2026
+version: "0.2.0"

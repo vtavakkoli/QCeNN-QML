@@ -6,6 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "qcenn-qml"
 version = "0.2.0"
 description = "Recurrent quantum MNIST classification and tiny quantum language experiments"
+license = "LicenseRef-QCeNN-QML-NC-Commercial"
+license-files = ["LICENSE", "NOTICE.md"]
+classifiers = ["License :: Other/Proprietary License"]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26,<3", "qiskit>=1.2,<3", "qiskit-aer>=0.15,<1", "pillow>=10"]
 
