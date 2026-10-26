@@ -19,21 +19,30 @@ def measure_split(images, labels, keys, key_labels, *, rounds, encoding, damping
     from qiskit import qpy
     rows, resources = [], []
     construction_seconds = 0.
+    print(f"split={Path(output_dir).name}: starting {len(images)} images; reset_memory={reset_memory}",flush=True)
     for start in range(0, len(images), batch_size):
+        write_json(Path(output_dir)/'progress.json',{'completed_images':len(rows),
+            'total_images':len(images),'status':'running','phase':'constructing_circuits'})
         timer = perf_counter()
         circuits = [memory_circuit(query, keys, key_labels, rounds=rounds,
             encoding=encoding, damping=damping, max_qubits=max_qubits,reset_memory=reset_memory)
             for query in images[start:start+batch_size]]
         construction_seconds += perf_counter()-timer
+        write_json(Path(output_dir)/'progress.json',{'completed_images':len(rows),
+            'total_images':len(images),'status':'running','phase':'executing_circuits'})
         counts, native, costs = execute(circuits, shots, seed+start)
         resources.append(costs)
         if start == 0:
             with (Path(output_dir)/"example-native.qpy").open("wb") as stream:
                 qpy.dump(native[0], stream)
-        rows.extend(decode_postselection(c, 4, rounds, 10) for c in counts)
+        measured=[decode_postselection(c, 4, rounds, 10) for c in counts]
+        write_json(Path(output_dir)/f'batch-{start:06d}.json',{'start_image':start,
+            'truth':np.asarray(labels[start:start+len(measured)],dtype=int).tolist(),
+            'predictions':measured,'resources':costs})
+        rows.extend(measured)
         write_json(Path(output_dir)/'progress.json',{'completed_images':len(rows),
             'total_images':len(images),'status':'complete' if len(rows)==len(images) else 'running'})
-        print(f"  measured {len(rows)}/{len(images)} images", flush=True)
+        print(f"  {Path(output_dir).name}: measured {len(rows)}/{len(images)} images", flush=True)
     result = {**classification_metrics(labels, [r["prediction"] for r in rows]),
         "predictions": rows, "accepted_shot_fraction": sum(r["accepted_shots"] for r in rows)/(shots*len(rows)),
         "resources": resources, "circuit_construction_seconds": construction_seconds}
@@ -44,6 +53,7 @@ def measure_split(images, labels, keys, key_labels, *, rounds, encoding, damping
             **classification_metrics(labels, [p.argmax() if a else -1 for p,a in exact]),
             "acceptance_mean": float(np.mean([a**rounds if reset_memory else a for _,a in exact])),
             "used_for_quantum_predictions": False}
+    write_json(Path(output_dir)/'result.json',result)
     return result
 
 
@@ -65,6 +75,7 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
     directory.mkdir(parents=True, exist_ok=True)
     config["seeds"] = list(seeds)
     write_json(directory/"config.json", config)
+    source=provenance() # Capture the source before a long run, not after it.
     started = perf_counter()
     train_images, train_labels, test_images, test_labels = load_dataset(dataset, data_root, download=not no_download)
     loading_seconds = perf_counter()-started
@@ -88,6 +99,19 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
         np.savez_compressed(run_dir/"memory.npz", raw_image_vectors=keys,
             labels=train_labels[ti], training_source_indices=ti)
         splits = {}
+        def checkpoint(stage):
+            current={'seed':seed,'splits':splits,'test_evaluated':'test' in splits,
+                'classical_preparation_seconds':preparation_seconds,
+                'configuration_selection':'fixed_before_test; no validation-driven CPU fitting'}
+            partial={'experiment':'coherent_recurrent_quantum_exemplar_memory',
+                **CORE_DISCLOSURE,'status':'in_progress','active_stage':stage,
+                'dataset':dataset,'is_real_mnist':dataset=='mnist','configuration':config,
+                'source':source,'tiny_fit_gate_required':True,'runs':runs+[current],
+                'test_accuracy_mean':float(np.mean([r['splits']['test']['accuracy']
+                    for r in runs+[current] if r['test_evaluated']]))
+                    if any(r['test_evaluated'] for r in runs+[current]) else None}
+            write_json(directory/'report.partial.json',partial)
+            write_json(run_dir/'report.partial.json',current)
         for name, data, truth in (("tiny_train",keys,train_labels[ti]),
                                    ("validation",validation,train_labels[vi]),
                                    ("test",test,test_labels[ei])):
@@ -97,6 +121,7 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
                 break
             target = run_dir/name
             target.mkdir()
+            checkpoint(name+':running')
             print(f"seed={seed} {name}: quantum memory, no optimizer", flush=True)
             splits[name] = measure_split(data,truth,keys,train_labels[ti],rounds=rounds,
                 encoding=encoding,damping=damping,shots=shots,seed=seed+1000,
@@ -107,30 +132,38 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
                     f"accuracy={splits[name]['accuracy']:.3f}, required={fit_threshold:.3f}",flush=True)
                 if not splits[name]['fit_gate_passed']:
                     print(f'seed={seed} BLOCKED: validation and test skipped after failed tiny retrieval gate',flush=True)
+            checkpoint(name+':complete')
             if name == 'validation':
                 target=run_dir/'validation_k0_reference'; target.mkdir()
+                checkpoint('validation_k0_reference:running')
                 splits['validation_k0_reference']=measure_split(validation,train_labels[vi],keys,train_labels[ti],
                     rounds=1,encoding=encoding,damping=damping,shots=shots,seed=seed+1000,
                     batch_size=batch_size,max_qubits=max_qubits,output_dir=target)
+                checkpoint('validation_k0_reference:complete')
         if "test" in splits:
             target = run_dir/"quantum_k0_reference"
             target.mkdir()
+            checkpoint('quantum_k0_reference:running')
             splits["quantum_k0_reference"] = measure_split(test,test_labels[ei],keys,train_labels[ti],
                 rounds=1,encoding=encoding,damping=damping,shots=shots,seed=seed+1000,
                 batch_size=batch_size,max_qubits=max_qubits,output_dir=target)
+            checkpoint('quantum_k0_reference:complete')
             if include_reset_control:
                 target=run_dir/'reset_memory_control'; target.mkdir()
+                checkpoint('reset_memory_control:running')
                 splits['reset_memory_control']=measure_split(test,test_labels[ei],keys,train_labels[ti],
                     rounds=rounds,encoding=encoding,damping=damping,shots=shots,seed=seed+1000,
                     batch_size=batch_size,max_qubits=max_qubits,output_dir=target,reset_memory=True)
+                checkpoint('reset_memory_control:complete')
         run = {"seed":seed,"splits":splits,"test_evaluated":"test" in splits,
             "classical_preparation_seconds":preparation_seconds,
             "configuration_selection":"fixed_before_test; no validation-driven CPU fitting"}
         write_json(run_dir/"report.json",run)
+        (run_dir/'report.partial.json').unlink(missing_ok=True)
         runs.append(run)
     report = {"experiment":"coherent_recurrent_quantum_exemplar_memory",
         **CORE_DISCLOSURE, "dataset":dataset,"is_real_mnist":dataset=="mnist",
-        "configuration":config,"source":provenance(),"loading_seconds":loading_seconds,
+        "configuration":config,"source":source,"loading_seconds":loading_seconds,
         "tiny_fit_gate_required":True,"runs":runs,
         "test_accuracy_mean":float(np.mean([r['splits']['test']['accuracy'] for r in runs if r['test_evaluated']]))
             if any(r['test_evaluated'] for r in runs) else None,
@@ -141,6 +174,7 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
             "No quantum-only training of the historical 19-angle network is claimed",
             "All quantum execution here uses Aer simulation; no QPU or advantage claim"]}
     write_json(directory/"report.json",report)
+    (directory/'report.partial.json').unlink(missing_ok=True)
     print(f"report: {directory/'report.json'}; test accuracy: {report['test_accuracy_mean']}",flush=True)
     return report
 

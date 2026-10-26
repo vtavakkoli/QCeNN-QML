@@ -123,47 +123,145 @@ def controlled_amplitudes(records):
     return circuit
 
 
-def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
-    """Measured native circuits. Noise affects declared output bits, not flags."""
-    from qiskit import transpile
+def independent_components(circuit):
+    """Exact tensor-product simulation optimization, never a model prediction.
+
+    Only explicitly opted-in circuits with disjoint quantum components and
+    distinct final classical destinations qualify. All original clbits remain
+    in each component so measured shot strings can be combined without scores.
+    """
+    if not (circuit.metadata or {}).get('factorize_independent_registers'):
+        return [circuit]
+    from qiskit.converters import circuit_to_dag,dag_to_circuit
+    measured=set()
+    for instruction in circuit.data:
+        op=instruction.operation
+        if getattr(op,'condition',None) is not None or hasattr(op,'blocks'):
+            return [circuit]
+        if instruction.clbits:
+            if op.name!='measure' or instruction.clbits[0] in measured:
+                return [circuit]
+            measured.add(instruction.clbits[0])
+    parts=[]
+    for dag in circuit_to_dag(circuit).separable_circuits(remove_idle_qubits=True):
+        part=dag_to_circuit(dag)
+        if not any(e.operation.name=='measure' for e in part.data):
+            continue # An independent, unobserved component has trace one.
+        original=[circuit.find_bit(q).index for q in part.qubits]
+        part.metadata={'output_qubits':[original.index(q) for q in
+            (circuit.metadata or {}).get('output_qubits',[]) if q in original],
+            'original_qubits':original}
+        parts.append(part)
+    return sorted(parts,key=lambda p:min(p.metadata['original_qubits'])) if parts else [circuit]
+
+
+def _aer_result(native,shots,seed,readout_error,threads,*,memory=False):
     from qiskit_aer import AerSimulator
     from qiskit_aer.noise import NoiseModel, ReadoutError
     from time import perf_counter
+    from concurrent.futures import TimeoutError as FutureTimeout
+    noise = None
+    if readout_error and (native[0].metadata or {}).get('output_qubits'):
+        noise = NoiseModel()
+        for qubit in native[0].metadata["output_qubits"]:
+            noise.add_readout_error(ReadoutError([[1-readout_error, readout_error],
+                [readout_error, 1-readout_error]]), [qubit])
+    # Parallelize independent circuits when present; otherwise allow one MPS
+    # thread pool. Never nest both pools or exceed the worker's CPU budget.
+    parallel=min(threads,len(native))
+    mps_threads=threads if parallel==1 else 1
+    backend = AerSimulator(method="matrix_product_state", max_parallel_threads=threads,
+        max_parallel_experiments=parallel, max_parallel_shots=1, mps_omp_threads=mps_threads,
+        matrix_product_state_truncation_threshold=1e-20, noise_model=noise,
+        # Direct MPS sampling avoids constructing a large probability vector
+        # for wide coherent memories, even when few classical bits are read.
+        mps_sample_measure_algorithm="mps_apply_measure")
+    print(f'Aer sampling: circuits={len(native)} qubits={max(c.num_qubits for c in native)} '
+        f'shots={shots} CPU-thread-budget={threads} parallel-circuits={parallel}',flush=True)
+    started=perf_counter()
+    job=backend.run(native,shots=shots,seed_simulator=seed,memory=memory)
+    while True:
+        try:
+            result=job.result(timeout=30)
+            break
+        except FutureTimeout:
+            print(f'Aer still running: elapsed={perf_counter()-started:.0f}s; '
+                'no shot-progress estimate available',flush=True)
+    if not result.success:
+        raise RuntimeError(str(result.status))
+    return result
+
+
+def _compile_components(circuit,seed):
+    """Prevent MCX synthesis borrowing dirty ancillas from unrelated blocks."""
+    from qiskit import transpile
+    options=dict(basis_gates=['rz','sx','x','cx','reset'],
+        optimization_level=1,seed_transpiler=seed,num_processes=1)
+    parts=independent_components(circuit)
+    if len(parts)==1:
+        return transpile(circuit,**options)
+    native=circuit.copy_empty_like()
+    measurements=[]
+    for part in parts:
+        mapping=part.metadata['original_qubits']
+        compiled=transpile(part,**options)
+        if compiled.num_qubits!=len(mapping) or compiled.layout is not None:
+            raise RuntimeError('Unexpected component qubit remapping')
+        native.global_phase+=compiled.global_phase
+        for instruction in compiled.data:
+            qubits=[native.qubits[mapping[compiled.find_bit(q).index]] for q in instruction.qubits]
+            clbits=[native.clbits[compiled.find_bit(c).index] for c in instruction.clbits]
+            if instruction.operation.name=='measure':
+                measurements.append((instruction.operation,qubits,clbits))
+            else:
+                native.append(instruction.operation,qubits,clbits)
+    # All component measurements commute; retain the model's final-only readout.
+    for operation,qubits,clbits in measurements:
+        native.append(operation,qubits,clbits)
+    return native
+
+
+def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
+    """Measured native circuits. Noise affects declared output bits, not flags."""
+    from time import perf_counter
+    from collections import Counter
     import os
     if shots < 1 or not circuits or not 0 <= readout_error < .5:
         raise ValueError("Invalid circuit/shot/noise budget")
     threads=int(os.environ.get('QCENN_THREADS','1'))
     if threads<1:
         raise ValueError('QCENN_THREADS must be a positive integer')
-    noise = None
-    if readout_error:
-        noise = NoiseModel()
-        for qubit in circuits[0].metadata["output_qubits"]:
-            noise.add_readout_error(ReadoutError([[1-readout_error, readout_error],
-                [readout_error, 1-readout_error]]), [qubit])
-    # One OpenMP layer per process. The Bash runner divides the total CPU
-    # budget among independent workers; BLAS/transpilation do not nest pools.
-    backend = AerSimulator(method="matrix_product_state", max_parallel_threads=threads,
-        max_parallel_experiments=1, max_parallel_shots=1, mps_omp_threads=threads,
-        matrix_product_state_truncation_threshold=1e-20, noise_model=noise,
-        # Direct MPS sampling avoids constructing a large probability vector
-        # for wide coherent memories, even when few classical bits are read.
-        mps_sample_measure_algorithm="mps_apply_measure")
+    print(f'Transpiling {len(circuits)} circuits',flush=True)
     start = perf_counter()
-    native = list(circuits) if precompiled else transpile(circuits,
-        basis_gates=["rz", "sx", "x", "cx", "reset"],
-        optimization_level=1, seed_transpiler=seed, num_processes=1)
+    native = list(circuits) if precompiled else [_compile_components(c,seed) for c in circuits]
     compile_seconds = perf_counter()-start
     start = perf_counter()
-    result = backend.run(native, shots=shots, seed_simulator=seed).result()
-    if not result.success:
-        raise RuntimeError(str(result.status))
-    counts = [result.get_counts(i) for i in range(len(native))]
+    components=[independent_components(c) for c in native]
+    if all(len(parts)==1 for parts in components):
+        result=_aer_result(native,shots,seed,readout_error,threads)
+        counts=[result.get_counts(i) for i in range(len(native))]
+    else:
+        counts=[]
+        for index,(circuit,parts) in enumerate(zip(native,components,strict=True)):
+            joint=[0]*shots
+            print(f'Tensor-product sampling: {circuit.num_qubits} logical qubits; '
+                f'independent components={[p.num_qubits for p in parts]}',flush=True)
+            for component,part in enumerate(parts):
+                component_seed=int(np.random.SeedSequence([seed,index,component]).generate_state(1)[0])
+                result=_aer_result([part],shots,component_seed,readout_error,threads,memory=True)
+                for shot,bits in enumerate(result.get_memory(0)):
+                    joint[shot] |= int(bits.replace(' ',''),2)
+            counts.append(dict(Counter(format(value,f'0{circuit.num_clbits}b') for value in joint)))
     if any(sum(c.values()) != shots for c in counts):
         raise RuntimeError("Missing measured shots")
+    factorized=any(len(parts)>1 for parts in components)
+    parallel=1 if factorized else min(threads,len(native))
     return counts, native, {"compilation_seconds": compile_seconds,
-        "cpu_thread_budget":threads,"mps_omp_threads":threads,
-        "parallel_experiments":1,"parallel_shots":1,"device":"CPU",
+        "cpu_thread_budget":threads,"mps_omp_threads":threads if parallel==1 else 1,
+        "parallel_experiments":parallel,"parallel_shots":1,"device":"CPU",
+        "simulation_component_qubits":[[p.num_qubits for p in parts] for parts in components],
+        "tensor_product_sampling":factorized,
+        "simulated_component_shots":shots*sum(len(parts) for parts in components),
         "mps_truncation_threshold":1e-20,
         "mps_sampling_algorithm":"mps_apply_measure",
         "sampling_seconds": perf_counter()-start, "total_shots": shots*len(native),

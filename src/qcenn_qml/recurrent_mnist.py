@@ -249,7 +249,10 @@ def provenance():
 
 
 def write_json(path, value):
-    Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf8")
+    path=Path(path)
+    temporary=path.with_name(path.name+'.tmp')
+    temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf8")
+    temporary.replace(path)
 
 
 def evaluate(dataset="mnist", seeds=(42,), train_per_class=20, validation_per_class=5,

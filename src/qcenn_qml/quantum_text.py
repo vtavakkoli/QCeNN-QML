@@ -70,8 +70,15 @@ def generate(prompt='the cat',corpus_file=None,order=1,new_tokens=3,shots=1024,
     if directory.exists() and any(directory.iterdir()):
         raise FileExistsError("Use a fresh text output directory")
     directory.mkdir(parents=True,exist_ok=True)
+    source=provenance()
+    write_json(directory/'progress.json',{'status':'running','phase':'constructing_circuit',
+        'new_tokens':new_tokens,'shots':shots})
+    print(f'Quantum text: constructing a coherent {new_tokens}-token circuit',flush=True)
     circuit=sequence_circuit(contexts,values,initial,bits=bits,order=order,new_tokens=new_tokens,amplify=amplify)
+    write_json(directory/'progress.json',{'status':'running','phase':'executing_circuit',
+        'qubits':circuit.num_qubits,'shots':shots})
     samples,native,cost=execute([circuit],shots,seed)
+    write_json(directory/'counts.json',{'counts':samples[0],'resources':cost,'source':source})
     histogram={}; accepted=0
     for binary,count in samples[0].items():
         code=int(binary.replace(' ',''),2)
@@ -93,11 +100,12 @@ def generate(prompt='the cat',corpus_file=None,order=1,new_tokens=3,shots=1024,
         'vocabulary':vocab,'order':order,'prompt':prompt,'generated_text':generated,
         'sequence_counts':histogram,'counts':samples[0],'accepted_shots':accepted,
         'accepted_shot_fraction':accepted/shots,'qubits':circuit.num_qubits,'resources':cost,
-        'raw_context_records':contexts,'raw_value_records':values,'source':provenance(),
+        'raw_context_records':contexts,'raw_value_records':values,'source':source,
         'limitations':['Nonparametric corpus memory, not pretrained Smol weights or quantum neural training',
             'Postselection of complete sequences reweights their distribution',
             'Classical input encoding, compilation and final sequence count decoding remain']}
     write_json(directory/'report.json',report)
+    write_json(directory/'progress.json',{'status':'complete','report':'report.json'})
     print(f'quantum sequence: {generated}; accepted={accepted}/{shots}',flush=True)
     return report
 
