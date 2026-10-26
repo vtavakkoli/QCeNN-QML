@@ -49,7 +49,7 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
              test_per_class=1, side=8, rounds=4, encoding="amplitude", damping=0.,
              fit_threshold=.9, shots=1024, batch_size=2, max_qubits=96,
              max_records=32, include_reset_control=False, data_root="data",
-             no_download=False, output_dir="results/quantum-mnist"):
+             no_download=False, output_dir="results/quantum-mnist", validation_only=False):
     config = dict(locals())
     directory = Path(output_dir)
     if directory.exists() and any(directory.iterdir()):
@@ -89,6 +89,8 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
         for name, data, truth in (("tiny_train",keys,train_labels[ti]),
                                    ("validation",validation,train_labels[vi]),
                                    ("test",test,test_labels[ei])):
+            if name == "test" and validation_only:
+                break
             if name != "tiny_train" and not splits["tiny_train"]["fit_gate_passed"]:
                 break
             target = run_dir/name
@@ -148,6 +150,8 @@ def main(argv=None):
     parser.add_argument("--damping",type=float,default=0.)
     parser.add_argument("--fit-threshold",type=float,default=.9)
     parser.add_argument("--include-reset-control",action="store_true")
+    parser.add_argument("--validation-only",action="store_true",
+        help="Stop after the tiny retrieval gate and validation references; never evaluate test")
     parser.add_argument("--data-root",default="data")
     parser.add_argument("--no-download",action="store_true")
     parser.add_argument("--output-dir",default="results/quantum-mnist")

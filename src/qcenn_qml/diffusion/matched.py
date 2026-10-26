@@ -133,8 +133,13 @@ def execute_benchmark(shots=1024,beta=1.,eta=.65,steps=(0,1,3),examples=8,
                 'classical_matched_replacement_probability_mean':float(np.mean(expected)),
                 'resources':cost}
             print(f'diffusion steps={step} {mode}: correct-token={np.mean(observed):.4f}, accepted={accepted}',flush=True)
+            write_json(directory/'progress.json',{'status':'in_progress',
+                'matched_results':all_results,'cases':rows})
     selected='noisy' if readout_error else 'noiseless'
     report={'name':'Raw-corpus quantum-memory masked denoising',**CORE_DISCLOSURE,
+        'configuration':{'shots':shots,'beta':beta,'eta':eta,'steps':list(steps),
+            'examples':examples,'seed':seed,'readout_error':readout_error,
+            'corpus_kind':corpus_kind,'corpus_file':corpus_file,'amplify':amplify},
         'status':'nonparametric_quantum_memory_not_a_trained_diffusion_LLM',
         'backend':'Qiskit Aer numerical MPS gate simulation (truncation 1e-20)','vocabulary':vocab,'mask_token':vocab[mask],
         'train_count':len(train),'heldout_count':len(test),'evaluation_count':len(cases),
@@ -152,6 +157,7 @@ def execute_benchmark(shots=1024,beta=1.,eta=.65,steps=(0,1,3),examples=8,
             'Classical input encoding, gate compilation and final counting remain',
             'Only output readout-bit flips are simulated; no physical QPU/gate noise claim']}
     write_json(directory/'report.json',report)
+    write_json(directory/'progress.json',{'status':'complete','report':'report.json'})
     lines=['# Quantum-memory denoising comparison','',
         'Gate-only numerical model; raw-record loading; no classical optimizer or fitted conditional-table gates.','',
         f'Corpus: {split["source"]}. Training records: {len(train)}; held-out records: {len(test)}; evaluated: {len(cases)}.',

@@ -76,6 +76,19 @@ def test_quantum_memory_measured_tiny_training_retrieval():
     assert [decode_postselection(c,1,2,2)['prediction'] for c in counts]==[0,1]
 
 
+def test_angle_success_ladder_restores_and_counts_workspace():
+    query=np.array([.4,.8,.2,.1]); keys=np.array([[.1,.9,.3,.2],[.8,.1,.2,.1]])
+    circuit=memory_circuit(query,keys,[0,1],rounds=1,encoding='angle',value_bits=1)
+    assert circuit.metadata['clean_success_workspace_qubits']==2
+    state=Statevector.from_instruction(circuit.remove_final_measurements(inplace=False))
+    np.testing.assert_allclose(state.probabilities([circuit.num_qubits-2,circuit.num_qubits-1]),
+        [1,0,0,0],atol=1e-12)
+    measured=[circuit.find_bit(e.qubits[0]).index for e in circuit.data if e.operation.name=='measure']
+    selected=state.probabilities(measured)[2:]
+    expected,acceptance=reference_distribution(query,keys,[0,1],rounds=1,encoding='angle',values=2)
+    np.testing.assert_allclose(selected,expected*acceptance,atol=1e-12)
+
+
 def test_coherent_reset_control_loses_accumulated_filter_but_charges_acceptance():
     query=np.array([.3,.7,.2,.1]); keys=np.array([[.2,.9,.1,.1],[.7,.2,.1,.3]])
     circuit=memory_circuit(query,keys,[0,1],rounds=2,value_bits=1,reset_memory=True)
@@ -85,6 +98,19 @@ def test_coherent_reset_control_loses_accumulated_filter_but_charges_acceptance(
     expected,a=reference_distribution(query,keys,[0,1],rounds=1,values=2)
     assert p.sum()==pytest.approx(a*a,abs=1e-12)
     np.testing.assert_allclose(p/p.sum(),expected,atol=1e-12)
+
+
+def test_retained_damping_environments_match_independent_channel():
+    circuit=memory_circuit([0,1],np.eye(2),[0,1],rounds=2,
+        damping=.2,value_bits=1)
+    assert circuit.metadata['retained_damping_environment_qubits']==2
+    assert all(e.operation.name!='reset' for e in circuit.data)
+    state=Statevector.from_instruction(circuit.remove_final_measurements(inplace=False))
+    measured=[circuit.find_bit(e.qubits[0]).index for e in circuit.data if e.operation.name=='measure']
+    selected=state.probabilities(measured)[6:]
+    # First success has mass 1/2; first damping survives the next filter with
+    # probability .8; final damping transfers .2 of the surviving label mass.
+    np.testing.assert_allclose(selected,[.5*.8*.2,.5*.8*.8],atol=1e-12)
 
 
 def test_readout_noise_invalid_tokens_remain_in_probability_denominator():
@@ -170,6 +196,8 @@ def test_matched_diffusion_reuses_native_circuits_and_classical_reference(tmp_pa
     assert set(r['matched_results'])=={'noiseless','noisy'}
     assert r['matched_results']['noisy']['1']['resources']['compilation_seconds']>=0
     assert r['matched_results']['noiseless']['1']['classical_matched_replacement_probability_mean']==pytest.approx(.65)
+    assert r['configuration']['amplify']==1
+    assert json.loads((tmp_path/'diffusion/progress.json').read_text())['status']=='complete'
 
 
 def test_tiny_fit_failure_blocks_validation_and_test(monkeypatch,tmp_path):
@@ -188,6 +216,19 @@ def test_legacy_hybrid_is_not_default_cli(monkeypatch):
     import qcenn_qml.recurrent_mnist as old
     monkeypatch.setattr(quantum,'main',lambda argv: {'quantum':True,'argv':argv})
     assert old.main(['--shots','32'])['quantum'] is True
+
+
+def test_validation_only_never_evaluates_test_after_passing_gate(monkeypatch,tmp_path):
+    import qcenn_qml.quantum_mnist as module
+    calls=[]
+    def fake(images,labels,*args,**kwargs):
+        calls.append(str(kwargs['output_dir'])); return {'accuracy':1.}
+    monkeypatch.setattr(module,'measure_split',fake)
+    r=module.evaluate(dataset='digits-proxy',side=4,shots=32,
+        validation_only=True,include_reset_control=True,output_dir=str(tmp_path/'mnist'))
+    assert [path.rsplit('/',1)[-1] for path in calls]==['tiny_train','validation','validation_k0_reference']
+    assert r['runs'][0]['test_evaluated'] is False
+    assert r['test_accuracy_mean'] is None
 
 
 def test_smol_audit_never_calls_toy_attention_full_model(tmp_path):

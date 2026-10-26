@@ -58,12 +58,14 @@ Validate alternative encodings with a matched small image resolution:
 
 ```bash
 python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
-  --encoding angle --rounds 2 --damping 0 --shots 1024 --output-dir results/mnist-angle
+  --encoding angle --rounds 2 --damping 0 --shots 1024 --validation-only \
+  --output-dir results/mnist-angle
 ```
 
 Use `--encoding amplitude` with the same side for a comparison. Other controls
 are `--rounds 1`, `2`, `4` and `--damping 0`, `0.05`. Choose configurations
-using training/validation, never test scores. Use a fresh output directory;
+using training/validation, never test scores. `--validation-only` never
+evaluates test, even after a passed retrieval gate. Use a fresh output directory;
 the default raw memory limit is 32 records. Details: [QUANTUM_CORE.md](docs/QUANTUM_CORE.md).
 
 The original per-exemplar reference remains available, explicitly using k=0:

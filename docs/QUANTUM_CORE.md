@@ -43,14 +43,22 @@ environment. Conditional output matches one update, but acceptance is a^r
 instead of mean(p_i^r), and the extra qubits/gates are counted. No CPU state
 update or classical prediction fallback is used.
 
-For validation experiments, vary one fixed configuration at a time:
+For validation experiments, add `--validation-only` and vary one fixed
+configuration at a time. This mode never evaluates test, even after a passed
+retrieval gate:
 
 - `--rounds 1`, `2`, `4`: recurrence/sharpening and postselection cost.
 - `--damping 0`, `0.05`: optional physical amplitude-damping channel on the
-  index. Default zero eliminates the previous learned forgetting mechanism.
+  index. Fresh retained environment qubits implement the channel; their
+  width is charged, and no mid-circuit reset or classical feedback is used.
+  Default zero eliminates the previous learned forgetting mechanism.
 - `--encoding amplitude` or `angle`, both with `--side 4` for a matched
   16-feature ablation. Angle loading uses product RY states; it is bounded to
   16 features. Amplitude loading supports sides 4, 8 and 16.
+
+Angle success checks use a clean Toffoli ladder, with its additional work
+qubits included in the reported width; this avoids exponential synthesis of
+a many-control gate without workspace.
 
 Configuration choices must use training/validation results. Do not select
 rounds, encodings or damping with held-out test accuracy. No automatic CPU

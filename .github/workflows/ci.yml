@@ -14,7 +14,10 @@ jobs:
       - run: python -m pip install -e '.[test]'
       - run: python -m pytest -q
       - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir results/ci/mnist
-      - run: python -m qcenn_qml.smol135 --new-tokens 2 --shots 512 --output-dir results/ci/smol
+      - name: Coherent text CLI smoke (small raw corpus)
+        run: >-
+          python -m qcenn_qml.smol135 --corpus-file tests/fixtures/quantum_sequence.txt
+          --prompt cat --new-tokens 2 --shots 128 --output-dir results/ci/smol
       - name: Ten-class recurrent CLI smoke (digits proxy, not MNIST)
         run: >-
           python -m qcenn_qml.recurrent_mnist --dataset digits-proxy --seeds 3

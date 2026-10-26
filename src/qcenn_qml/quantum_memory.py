@@ -1,6 +1,6 @@
 """Coherent resident-index recurrence: monotone p**rounds kernel attention."""
 import numpy as np
-from .coherent import controlled_amplitudes, load_basis, qrom, uniform_records
+from .coherent import controlled_amplitudes, load_basis, mcx_clean, qrom, uniform_records
 from .quantum import amplitude_preparation
 
 
@@ -28,10 +28,15 @@ def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
         if data_width>16:
             raise MemoryError("The angle-encoding ablation is bounded to 16 features; use --side 4")
         loader, query_loader = None, None
-    width = index_width*(rounds if reset_memory else 1) + rounds*(data_width+1) + value_bits + int(damping > 0)
+    scratch_width=max(0,data_width-2) if encoding == "angle" else 0
+    damping_width=rounds*index_width if damping else 0
+    width = index_width*(rounds if reset_memory else 1) + rounds*(data_width+1) + value_bits + damping_width + scratch_width
     if width > max_qubits:
         raise MemoryError(f"Circuit needs {width} qubits, budget {max_qubits}")
     circuit = QuantumCircuit(width, value_bits+rounds)
+    scratch_end=width-damping_width
+    scratch=list(range(scratch_end-scratch_width,scratch_end))
+    environment_offset=scratch_end
     index = list(range(index_width))
     if not reset_memory:
         circuit.compose(uniform_records(len(keys)), index, inplace=True)
@@ -55,15 +60,20 @@ def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
                           for i in range(1 << index_width)]
                 circuit.append(UCRYGate(angles), [qubit, *index])
         circuit.x(work)
-        circuit.mcx(work, flag)
+        if encoding == "angle":
+            mcx_clean(circuit,work,flag,scratch)
+        else:
+            circuit.mcx(work, flag)
         circuit.x(work)
         flags.append(flag)
         if damping:
-            environment = width-1
+            # Fresh, retained environments implement the same damping channel
+            # after tracing them out, without mid-circuit resets or CPU feedback.
             for qubit in index:
+                environment=environment_offset
                 circuit.cry(2*np.arcsin(np.sqrt(damping)), qubit, environment)
                 circuit.cx(environment, qubit)
-                circuit.reset(environment)
+                environment_offset+=1
         offset += data_width+1
     values = list(range(offset, offset+value_bits))
     qrom(circuit, index, values, labels)
@@ -73,6 +83,8 @@ def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
         "quantum_recurrence_rounds": rounds, "classical_state_feedback": False,
         "retained_index_across_rounds":not reset_memory,
         "classical_optimizer": False, "encoding": encoding, "damping": damping,
+        "clean_success_workspace_qubits":scratch_width,
+        "retained_damping_environment_qubits":damping_width,
         "readout": "label_register_conditioned_on_all_overlap_flags"}
     return circuit
 

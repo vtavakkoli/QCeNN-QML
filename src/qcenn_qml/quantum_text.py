@@ -86,6 +86,8 @@ def generate(prompt='the cat',corpus_file=None,order=1,new_tokens=3,shots=1024,
     with (directory/'generation-native.qpy').open('wb') as stream:
         qpy.dump(native[0],stream)
     report={'experiment':'coherent_raw_corpus_sequence_memory',**CORE_DISCLOSURE,
+        'configuration':{'prompt':prompt,'corpus_file':corpus_file,'order':order,
+            'new_tokens':new_tokens,'shots':shots,'seed':seed,'amplify':amplify},
         'actual_SmolLM2_weights_on_quantum_circuit':False,'actual_SmolLM2_transformer_implemented':False,
         'classical_teacher_used':False,'intermediate_measurements':0,'classical_token_state_updates':0,
         'vocabulary':vocab,'order':order,'prompt':prompt,'generated_text':generated,
