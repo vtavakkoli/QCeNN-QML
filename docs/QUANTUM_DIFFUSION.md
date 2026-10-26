@@ -1,5 +1,9 @@
 # QCeNN-DiffusionLM — toy controlled-noise masked language experiment
 
+This is the **legacy count-table** experiment. Its CLI requires
+`--legacy-count-table`; the new raw-corpus memory, direct classical baseline
+and paired-noise protocol are in [QUANTUM_CORE.md](QUANTUM_CORE.md).
+
 Implemented in src/qcenn_qml/diffusion/. This is a feasibility prototype, not a full diffusion language model, quantum-trained neural network, or replication of QCeNN-MI's matrix-inversion channel.
 
 ## Physics
@@ -23,8 +27,8 @@ The reported "noise" is controlled quantum masking and collision reset; the opti
 ## Commands
 
     python -m pip install -e '.[test]'
-    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --output-dir results/diffusion/ideal
-    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --readout-error 0.05 --output-dir results/diffusion/noisy
+    python -m qcenn_qml.diffusion.benchmark --legacy-count-table --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --output-dir results/diffusion/ideal
+    python -m qcenn_qml.diffusion.benchmark --legacy-count-table --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --readout-error 0.05 --output-dir results/diffusion/noisy
 
 Compare both runs at the same seeds/shots. Outputs: report.json and report.md. Qiskit Aer simulates all gates, resets and measurements with declared noise settings. This is not physical QPU execution. Large steps/depth can be expensive because each 16-context loader uses controlled state-preparation gates.
 

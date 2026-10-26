@@ -4,10 +4,14 @@ import json
 from pathlib import Path
 
 
-def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None):
+def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
+          recurrent=None,attention=None,smol_feasibility=None):
     sources = {"mnist":mnist, "smol":smol, "diffusion":diffusion}
     if diffusion_noisy:
         sources["diffusion_noisy"] = diffusion_noisy
+    for kind,source in (("recurrent",recurrent),("attention",attention),("smol_feasibility",smol_feasibility)):
+        if source:
+            sources[kind]=source
     found,missing={},[]
     for kind,source in sources.items():
         path=Path(source)
@@ -56,12 +60,38 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None):
                 f"- Simulated readout error per measured bit: {x.get('readout_bitflip_probability')}.",
                 "| Steps | Measured clean-token frequency (noisy) | Ideal-readout result |",
                 "|---:|---:|---:|"]
-        baseline=found.get("diffusion",{}).get("results",{})
+        # Prefer the paired noiseless run from the SAME file/cases. Never
+        # compare broader text against an unrelated toy-corpus report.
+        baseline=x.get('matched_results',{}).get('noiseless',{})
+        if not baseline:
+            previous=found.get('diffusion',{})
+            keys=('vocabulary','train_count','heldout_count','evaluation_count','seeds',
+                  'forward_mask_probability_beta','reverse_replacement_probability_eta','steps')
+            if previous and all(previous.get(k)==x.get(k) for k in keys):
+                baseline=previous.get('results',{})
         for k,item in x.get("results",{}).items():
             ref=baseline.get(k,{}).get("measured_correct_token_probability")
             lines.append(f"| {k} | {item['measured_correct_token_probability']:.4f} | "
                          + (f"{ref:.4f}" if ref is not None else "not run") + " |")
         lines+=["","Readout flips are a measurement-error model, not a beneficial denoising resource.",""]
+    if 'recurrent' in found:
+        x=found['recurrent']
+        lines+=['## Quantum-memory MNIST','',
+            f"- Tiny training fit gate required: {x.get('tiny_fit_gate_required')}.",
+            f"- Mean evaluated test accuracy: {x.get('test_accuracy_mean')}.",
+            '- Nonparametric quantum exemplar memory, with no classical optimizer.','']
+    if 'attention' in found:
+        x=found['attention']
+        lines+=['## Reversible quantum attention','',
+            f"- Measured component cases: {len(x.get('cases',[]))}.",
+            '- Signed ternary dot products and softmax sampling are computed in gates.',
+            '- Full pretrained Smol attention blocks and coherent full-precision vector output are unimplemented.','']
+    if 'smol_feasibility' in found:
+        x=found['smol_feasibility']
+        lines+=['## Full Smol feasibility status','',
+            f"- Status: {x.get('full_model_quantum_conversion_test')}.",
+            f"- Explicit resident basis-encoding weight qubits: {x.get('chosen_basis_encoding_weight_qubits')}.",
+            '- This is an encoding estimate, not a lower bound on all quantum implementations.','']
     if missing:lines+=["## Experiments not executed here",""]+["- "+p for p in missing]+[""]
     lines+=["## Conclusion","",
             "All experiments are feasibility demonstrations. They do not establish speedup, advantage, physically executed noise benefits, or a full 135M-parameter quantum language model.",""]
@@ -77,6 +107,9 @@ def main(argv=None):
     parser.add_argument("--diffusion",default="results/ci/diffusion/report.json")
     parser.add_argument("--output-dir",default="results/ci/summary")
     parser.add_argument("--diffusion-noisy",default=None)
+    parser.add_argument('--recurrent')
+    parser.add_argument('--attention')
+    parser.add_argument('--smol-feasibility')
     return build(**vars(parser.parse_args(argv)))
 
 if __name__=="__main__":

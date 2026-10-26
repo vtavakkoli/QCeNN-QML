@@ -2,6 +2,17 @@
 
 ## What exists and what does not
 
+Version 0.3 defaults are documented in [QUANTUM_CORE.md](QUANTUM_CORE.md).
+They use raw-record quantum memories with no fitted classical parameters,
+require tiny training retrieval before validation/test, retain k=0 as a
+measured quantum reference, and compare denoising with direct classical and
+matched noiseless/noisy references on sentence-held-out small text. A signed
+ternary reversible softmax-attention component and full-Smol resource/coverage
+audit are implemented. Quantum neural-weight training, coherent full-precision
+transformer blocks and actual SmolLM2 weight execution remain unimplemented.
+Classical input loading/compilation/readout are declared; no entire-program
+purity, physical-QPU result or quantum advantage is claimed.
+
 Version 0.2 adds [recurrent ten-class MNIST](RECURRENT_MNIST.md): four retained
 memory qubits, a reset/reused environment, input-conditioned local collision
 channels and trained quantum readout gates. Classical SPSA-Adam training uses

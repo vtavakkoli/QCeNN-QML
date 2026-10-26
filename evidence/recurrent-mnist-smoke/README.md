@@ -42,10 +42,10 @@ Reproduce in a fresh directory:
 ```bash
 python -m pip install -r requirements-tested.txt
 python -m pip install --no-deps -e .
-python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 43 \
+python -m qcenn_qml.recurrent_mnist --legacy-hybrid --dataset mnist --seeds 42 43 \
   --train-per-class 20 --validation-per-class 5 --test-per-class 2 \
   --exemplars-per-class 1 --training-steps 150 --shots 1024 \
-  --include-reset-control --output-dir results/recurrent-validation
+  --include-reset-control --overlap-iterations 0 1 --output-dir results/recurrent-validation
 ```
 
 Counts are seeded; exact cross-platform floating-point and timing identity are

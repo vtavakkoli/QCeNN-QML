@@ -1,5 +1,9 @@
 # Recurrent ten-class MNIST
 
+This is the **historical v0.2 hybrid neural experiment**. Use
+`--legacy-hybrid` explicitly. The current default quantum-memory model and
+its tiny retrieval gate are described in [QUANTUM_CORE.md](QUANTUM_CORE.md).
+
 `python -m qcenn_qml.recurrent_mnist` trains a small quantum recurrent classifier
 and evaluates it with explicit Qiskit Aer circuits and finite-shot measurements.
 It has four persistent memory qubits, one reset/reused environment qubit, and
@@ -20,13 +24,13 @@ archives in `data/MNIST/raw/`. A missing or corrupt MNIST dataset fails loudly.
 python -m pip install -e '.[mnist,test]'
 
 # Small genuine-MNIST end-to-end smoke, including both measured overlap baselines.
-python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 \
+python -m qcenn_qml.recurrent_mnist --legacy-hybrid --dataset mnist --seeds 42 \
   --train-per-class 2 --validation-per-class 1 --test-per-class 1 \
   --exemplars-per-class 1 --training-steps 5 --shots 256 \
   --output-dir results/recurrent-smoke
 
 # Larger comparison, independently retrained across three seeded splits.
-python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 43 44 \
+python -m qcenn_qml.recurrent_mnist --legacy-hybrid --dataset mnist --seeds 42 43 44 \
   --train-per-class 100 --validation-per-class 20 --test-per-class 20 \
   --exemplars-per-class 2 --training-steps 500 --shots 1024 \
   --include-reset-control --output-dir results/recurrent-comparison

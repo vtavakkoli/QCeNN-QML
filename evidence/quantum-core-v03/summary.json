@@ -1,0 +1,546 @@
+{
+  "scope": "Small simulator/operator evidence; no QPU, pretrained Smol execution or quantum neural-weight training",
+  "verified_public_core_commit": "9dc7a43a101b2ec8b0b8dceb95b8d9632e6ca056",
+  "verification": {
+    "raw_readouts": 188,
+    "qpy_examples": 23,
+    "source_files_verified": 176
+  },
+  "mnist": {
+    "dataset": "original MNIST",
+    "configuration": {
+      "dataset": "mnist",
+      "seeds": [
+        42
+      ],
+      "train_per_class": 1,
+      "validation_per_class": 1,
+      "test_per_class": 1,
+      "side": 4,
+      "rounds": 2,
+      "encoding": "amplitude",
+      "damping": 0.0,
+      "fit_threshold": 0.9,
+      "shots": 1024,
+      "batch_size": 2,
+      "max_qubits": 96,
+      "max_records": 32,
+      "include_reset_control": true,
+      "data_root": "data",
+      "no_download": false,
+      "output_dir": "artifacts/quantum-corrections-final-v2/mnist"
+    },
+    "seed_42": {
+      "tiny_train": {
+        "accuracy": 0.9,
+        "acceptance": 0.5765625
+      },
+      "validation": {
+        "accuracy": 0.4,
+        "acceptance": 0.5998046875
+      },
+      "validation_k0_reference": {
+        "accuracy": 0.4,
+        "acceptance": 0.76240234375
+      },
+      "test": {
+        "accuracy": 0.2,
+        "acceptance": 0.5921875
+      },
+      "quantum_k0_reference": {
+        "accuracy": 0.2,
+        "acceptance": 0.76123046875
+      },
+      "reset_memory_control": {
+        "accuracy": 0.2,
+        "acceptance": 0.57578125
+      }
+    }
+  },
+  "diffusion": {
+    "configuration": {
+      "corpus_kind": "text",
+      "steps": [
+        0,
+        1,
+        3
+      ],
+      "shots": 256,
+      "examples": 4,
+      "seed": 42,
+      "readout_error": 0.05,
+      "amplify": 1
+    },
+    "vocabulary_size": 18,
+    "training_records": 48,
+    "heldout_records": 16,
+    "unique_evaluation_contexts": 4,
+    "classical_reference": {
+      "correct_token_probability_mean": 0.5,
+      "top1_accuracy": 0.5,
+      "unseen_context_cases": 2,
+      "smoothing": 0.0,
+      "used_to_compile_quantum_model": false
+    },
+    "matched_results": {
+      "noiseless": {
+        "0": {
+          "measured_correct_token_probability": 0.0,
+          "independent_ideal_probability_mean": 0.0,
+          "sequence_top1_accuracy": 0.0,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 92,
+          "accepted_shot_fraction": 0.08984375,
+          "compiled_depth_min": 10263,
+          "compiled_depth_max": 10265,
+          "compiled_max_qubits": 35,
+          "classical_matched_replacement_probability_mean": 0.0,
+          "resources": {
+            "compilation_seconds": 7.650236491999749,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 7.79307692599923,
+            "total_shots": 1024,
+            "qubits_max": 35,
+            "depth_max": 10265,
+            "cx_total_per_execution": 10640,
+            "cx_shot_weighted_total": 2723840
+          }
+        },
+        "1": {
+          "measured_correct_token_probability": 0.3178294573643411,
+          "independent_ideal_probability_mean": 0.325,
+          "sequence_top1_accuracy": 0.5,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 88,
+          "accepted_shot_fraction": 0.0859375,
+          "compiled_depth_min": 10280,
+          "compiled_depth_max": 10282,
+          "compiled_max_qubits": 41,
+          "classical_matched_replacement_probability_mean": 0.325,
+          "resources": {
+            "compilation_seconds": 7.039237990000402,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 115.08318076100022,
+            "total_shots": 1024,
+            "qubits_max": 41,
+            "depth_max": 10282,
+            "cx_total_per_execution": 10820,
+            "cx_shot_weighted_total": 2769920
+          }
+        },
+        "3": {
+          "measured_correct_token_probability": 0.47509003601440575,
+          "independent_ideal_probability_mean": 0.4785625,
+          "sequence_top1_accuracy": 0.5,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 100,
+          "accepted_shot_fraction": 0.09765625,
+          "compiled_depth_min": 10310,
+          "compiled_depth_max": 10312,
+          "compiled_max_qubits": 53,
+          "classical_matched_replacement_probability_mean": 0.4785625,
+          "resources": {
+            "compilation_seconds": 8.540750094000032,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 742.8360602049997,
+            "total_shots": 1024,
+            "qubits_max": 53,
+            "depth_max": 10312,
+            "cx_total_per_execution": 11180,
+            "cx_shot_weighted_total": 2862080
+          }
+        }
+      },
+      "noisy": {
+        "0": {
+          "measured_correct_token_probability": 0.0,
+          "independent_ideal_probability_mean": 0.0,
+          "sequence_top1_accuracy": 0.0,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 92,
+          "accepted_shot_fraction": 0.08984375,
+          "compiled_depth_min": 10263,
+          "compiled_depth_max": 10265,
+          "compiled_max_qubits": 35,
+          "classical_matched_replacement_probability_mean": 0.0,
+          "resources": {
+            "compilation_seconds": 1.1760002962546423e-06,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 5.856603080000241,
+            "total_shots": 1024,
+            "qubits_max": 35,
+            "depth_max": 10265,
+            "cx_total_per_execution": 10640,
+            "cx_shot_weighted_total": 2723840
+          }
+        },
+        "1": {
+          "measured_correct_token_probability": 0.26705426356589146,
+          "independent_ideal_probability_mean": 0.325,
+          "sequence_top1_accuracy": 0.5,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 88,
+          "accepted_shot_fraction": 0.0859375,
+          "compiled_depth_min": 10280,
+          "compiled_depth_max": 10282,
+          "compiled_max_qubits": 41,
+          "classical_matched_replacement_probability_mean": 0.325,
+          "resources": {
+            "compilation_seconds": 1.1339998309267685e-06,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 114.36790173999998,
+            "total_shots": 1024,
+            "qubits_max": 41,
+            "depth_max": 10282,
+            "cx_total_per_execution": 10820,
+            "cx_shot_weighted_total": 2769920
+          }
+        },
+        "3": {
+          "measured_correct_token_probability": 0.38505402160864344,
+          "independent_ideal_probability_mean": 0.4785625,
+          "sequence_top1_accuracy": 0.5,
+          "samples": 4,
+          "total_shots": 1024,
+          "accepted_shots": 100,
+          "accepted_shot_fraction": 0.09765625,
+          "compiled_depth_min": 10310,
+          "compiled_depth_max": 10312,
+          "compiled_max_qubits": 53,
+          "classical_matched_replacement_probability_mean": 0.4785625,
+          "resources": {
+            "compilation_seconds": 8.480001270072535e-07,
+            "mps_truncation_threshold": 1e-20,
+            "mps_sampling_algorithm": "mps_apply_measure",
+            "sampling_seconds": 891.1985796140007,
+            "total_shots": 1024,
+            "qubits_max": 53,
+            "depth_max": 10312,
+            "cx_total_per_execution": 11180,
+            "cx_shot_weighted_total": 2862080
+          }
+        }
+      }
+    }
+  },
+  "attention": {
+    "max_errors": [
+      0.01880972387371349,
+      0.028392382000212157
+    ],
+    "shots": 4096,
+    "accepted_fractions": [
+      0.38916015625,
+      0.27197265625
+    ]
+  },
+  "text": {
+    "command": "python -m qcenn_qml.smol135 --new-tokens 2 --shots 1024",
+    "seed": 42,
+    "amplify": 1,
+    "order": 1,
+    "generated_text": "ran on",
+    "accepted_shots": 287,
+    "total_shots": 1024
+  },
+  "smol_audit": {
+    "model": "HuggingFaceTB/SmolLM2-135M",
+    "configuration_source": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M/raw/main/config.json",
+    "configuration_snapshot_checked": "2026-10-26",
+    "configuration": {
+      "hidden_size": 576,
+      "intermediate_size": 1536,
+      "num_hidden_layers": 30,
+      "num_attention_heads": 9,
+      "num_key_value_heads": 3,
+      "vocab_size": 49152,
+      "max_position_embeddings": 8192,
+      "tie_word_embeddings": true,
+      "hidden_act": "silu",
+      "rms_norm_eps": 1e-05,
+      "rope_theta": 100000,
+      "torch_dtype": "bfloat16"
+    },
+    "full_model_quantum_conversion_test": "NOT_IMPLEMENTED_NOT_DEMONSTRATED",
+    "actual_smol_weights_executed": false,
+    "physical_qpu_tested": false,
+    "attention_component_report": "artifacts/quantum-core-evidence/attention-published/report.json",
+    "coverage": {
+      "ternary_signed_dot_product_attention_sampling": true,
+      "actual_pretrained_weight_loading": false,
+      "full_precision_qkv_and_output_projections": false,
+      "rotary_position_encoding": false,
+      "rms_normalization": false,
+      "coherent_weighted_sum_hidden_vector": false,
+      "silu_gated_mlp": false,
+      "full_vocabulary_head": false,
+      "kv_cache": false,
+      "thirty_layer_composition": false,
+      "quantum_only_neural_weight_training": false,
+      "physical_qpu_execution": false
+    },
+    "parameters_from_shapes": 134515008,
+    "weight_bits": 16,
+    "chosen_basis_encoding_weight_qubits": 2152240128,
+    "weight_bytes_at_chosen_precision": 269030016,
+    "dense_projection_and_mlp_MACs_per_token": 106168320,
+    "vocabulary_head_MACs_per_token": 28311552,
+    "total_dense_MACs_before_context_and_nonlinearities": 134479872,
+    "additional_context_attention_MACs_per_token": 4423680,
+    "context_length": 128,
+    "encoding_scope": "Explicit resident basis encoding; not a lower bound on all quantum encodings",
+    "other_encoding_caveat": "Compiling weights into QROM can trade weight registers for large loading circuits; it does not provide a free oracle",
+    "claim": "Finite-precision reversible implementation is an algorithmic possibility; this repository has not built or executed it",
+    "limitations": [
+      "No 135M weight download or conversion was attempted by this audit",
+      "Toy signed ternary attention samples do not compose into a full hidden-state transformer",
+      "MAC counts are classical-operation counts, not measured quantum-gate counts",
+      "No quantum speedup or hardware feasibility follows from this resource ledger"
+    ]
+  },
+  "runtime_commit_note": "Runtime local bbbf0be and public core 9dc7a43 have identical Git trees. Source fingerprints match the archived core-9dc7a43 or validation-ebd6b91 source snapshots. Validation-only checks use clean success ladders and retained damping environments. The full-fit follow-up explicitly sets threshold 1.0; the final CLI also makes 1.0 the default. Original reports keep their original provenance.",
+  "software_tests_passed": 58,
+  "mnist_validation_diagnostics": {
+    "amplitude": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 2,
+        "encoding": "amplitude",
+        "damping": 0.0,
+        "fit_threshold": 0.9,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/current-amplitude",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 0.9,
+          "acceptance": 0.5765625,
+          "fit_gate_passed": true
+        },
+        "validation": {
+          "accuracy": 0.4,
+          "acceptance": 0.5998046875,
+          "fit_gate_passed": null
+        },
+        "validation_k0_reference": {
+          "accuracy": 0.4,
+          "acceptance": 0.76240234375,
+          "fit_gate_passed": null
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    },
+    "amplitude-256shots": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 2,
+        "encoding": "amplitude",
+        "damping": 0.0,
+        "fit_threshold": 0.9,
+        "shots": 256,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/amplitude-zero",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 0.8,
+          "acceptance": 0.573046875,
+          "fit_gate_passed": false
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    },
+    "amplitude-damped": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 2,
+        "encoding": "amplitude",
+        "damping": 0.05,
+        "fit_threshold": 0.9,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/amplitude-damping-coherent",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 0.5,
+          "acceptance": 0.571484375,
+          "fit_gate_passed": false
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    },
+    "angle": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 2,
+        "encoding": "angle",
+        "damping": 0.0,
+        "fit_threshold": 0.9,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/current-angle",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 0.8,
+          "acceptance": 0.3251953125,
+          "fit_gate_passed": false
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    },
+    "angle-damped": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 2,
+        "encoding": "angle",
+        "damping": 0.05,
+        "fit_threshold": 0.9,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/current-angle-damped",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 0.7,
+          "acceptance": 0.31796875,
+          "fit_gate_passed": false
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    },
+    "full-fit-r4": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 4,
+        "encoding": "amplitude",
+        "damping": 0.0,
+        "fit_threshold": 1.0,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/full-fit-r4",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 1.0,
+          "acceptance": 0.3841796875,
+          "fit_gate_passed": true
+        },
+        "validation": {
+          "accuracy": 0.5,
+          "acceptance": 0.39248046875,
+          "fit_gate_passed": null
+        },
+        "validation_k0_reference": {
+          "accuracy": 0.4,
+          "acceptance": 0.76240234375,
+          "fit_gate_passed": null
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
+    }
+  },
+  "default_tiny_retrieval_threshold": 1.0
+}
