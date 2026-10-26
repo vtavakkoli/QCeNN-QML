@@ -76,6 +76,18 @@ def test_quantum_memory_measured_tiny_training_retrieval():
     assert [decode_postselection(c,1,2,2)['prediction'] for c in counts]==[0,1]
 
 
+def test_mps_thread_budget_is_applied_and_recorded(monkeypatch):
+    monkeypatch.setenv('QCENN_THREADS','2')
+    circuit=QuantumCircuit(1,1); circuit.x(0); circuit.measure(0,0)
+    counts,_,resources=execute([circuit],64,4)
+    assert counts==[{'1':64}]
+    assert resources['cpu_thread_budget']==resources['mps_omp_threads']==2
+    assert resources['parallel_experiments']==resources['parallel_shots']==1
+    monkeypatch.setenv('QCENN_THREADS','0')
+    with pytest.raises(ValueError,match='QCENN_THREADS'):
+        execute([circuit],64,4)
+
+
 def test_angle_success_ladder_restores_and_counts_workspace():
     query=np.array([.4,.8,.2,.1]); keys=np.array([[.1,.9,.3,.2],[.8,.1,.2,.1]])
     circuit=memory_circuit(query,keys,[0,1],rounds=1,encoding='angle',value_bits=1)
@@ -219,6 +231,16 @@ def test_legacy_hybrid_is_not_default_cli(monkeypatch):
     assert old.main(['--shots','32'])['quantum'] is True
 
 
+def test_batch_cli_exits_two_for_failed_fit_gate(monkeypatch):
+    import qcenn_qml.quantum_mnist as module
+    report={'runs':[{'splits':{'tiny_train':{'fit_gate_passed':False}}}]}
+    monkeypatch.setattr(module,'evaluate',lambda **kwargs:report)
+    assert module.main([]) is report # Existing direct CLI behavior remains compatible.
+    with pytest.raises(SystemExit) as error:
+        module.main(['--fail-on-fit-gate'])
+    assert error.value.code==2
+
+
 def test_validation_only_never_evaluates_test_after_passing_gate(monkeypatch,tmp_path):
     import qcenn_qml.quantum_mnist as module
     calls=[]
@@ -256,3 +278,18 @@ def test_combined_report_uses_paired_noise_reference_not_another_corpus(tmp_path
     build(str(tmp_path/'missing-mnist'),str(tmp_path/'missing-smol'),str(unrelated),str(target),
         diffusion_noisy=str(paired))
     assert '| 1 | 0.4000 | 0.5000 |' in (target/'combined.md').read_text()
+
+
+def test_combined_report_keeps_all_parallel_mnist_seeds_and_blocked_tests(tmp_path):
+    from qcenn_qml.report import build
+    paths=[]
+    for seed,passed in ((42,True),(43,False),(44,True)):
+        path=tmp_path/f'{seed}.json'
+        path.write_text(json.dumps({'test_accuracy_mean':.5 if passed else None,
+            'tiny_fit_gate_required':True,'runs':[{'seed':seed,'test_evaluated':passed,
+                'splits':{'tiny_train':{'fit_gate_passed':passed}}}]}))
+        paths.append(str(path))
+    r=build(str(tmp_path/'missing'),str(tmp_path/'missing'),str(tmp_path/'missing'),
+        str(tmp_path/'combined'),recurrent=paths)
+    assert [r['experiments'][f'recurrent_{i}']['runs'][0]['seed'] for i in range(3)]==[42,43,44]
+    assert 'Seed 43: fit gate False; test evaluated False.' in (tmp_path/'combined/combined.md').read_text()

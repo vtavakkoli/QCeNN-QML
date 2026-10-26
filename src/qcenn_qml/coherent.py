@@ -129,15 +129,22 @@ def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
     from qiskit_aer import AerSimulator
     from qiskit_aer.noise import NoiseModel, ReadoutError
     from time import perf_counter
+    import os
     if shots < 1 or not circuits or not 0 <= readout_error < .5:
         raise ValueError("Invalid circuit/shot/noise budget")
+    threads=int(os.environ.get('QCENN_THREADS','1'))
+    if threads<1:
+        raise ValueError('QCENN_THREADS must be a positive integer')
     noise = None
     if readout_error:
         noise = NoiseModel()
         for qubit in circuits[0].metadata["output_qubits"]:
             noise.add_readout_error(ReadoutError([[1-readout_error, readout_error],
                 [readout_error, 1-readout_error]]), [qubit])
-    backend = AerSimulator(method="matrix_product_state", max_parallel_threads=1,
+    # One OpenMP layer per process. The Bash runner divides the total CPU
+    # budget among independent workers; BLAS/transpilation do not nest pools.
+    backend = AerSimulator(method="matrix_product_state", max_parallel_threads=threads,
+        max_parallel_experiments=1, max_parallel_shots=1, mps_omp_threads=threads,
         matrix_product_state_truncation_threshold=1e-20, noise_model=noise,
         # Direct MPS sampling avoids constructing a large probability vector
         # for wide coherent memories, even when few classical bits are read.
@@ -155,6 +162,8 @@ def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
     if any(sum(c.values()) != shots for c in counts):
         raise RuntimeError("Missing measured shots")
     return counts, native, {"compilation_seconds": compile_seconds,
+        "cpu_thread_budget":threads,"mps_omp_threads":threads,
+        "parallel_experiments":1,"parallel_shots":1,"device":"CPU",
         "mps_truncation_threshold":1e-20,
         "mps_sampling_algorithm":"mps_apply_measure",
         "sampling_seconds": perf_counter()-start, "total_shots": shots*len(native),

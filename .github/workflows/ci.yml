@@ -13,6 +13,19 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e '.[test]'
       - run: python -m pytest -q
+      - name: Parallel runner, gate status and per-experiment ZIPs (digits proxy)
+        env:
+          QCENN_PYTHON: python
+          QCENN_CPUS: '2'
+          QCENN_JOBS: '2'
+        run: |
+          set +e
+          bash scripts/run_quantum_corrections.sh --smoke results/ci/parallel
+          qcenn_code=$?
+          set -e
+          case "$qcenn_code" in 0|2) ;; *) exit "$qcenn_code" ;; esac
+          bash scripts/run_quantum_corrections.sh --status results/ci/parallel
+          for archive in results/ci/parallel/archives/*.zip; do unzip -t "$archive"; done
       - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir results/ci/mnist
       - name: Coherent text CLI smoke (small raw corpus)
         run: >-

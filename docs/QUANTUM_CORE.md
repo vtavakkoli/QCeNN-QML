@@ -65,6 +65,13 @@ rounds, encodings or damping with held-out test accuracy. No automatic CPU
 hyperparameter fitting is disguised as quantum training. The default raw
 record limit is 32; large quantum memories require explicit resource budgets.
 
+The parallel Bash runner starts different seeds and model experiments in
+independent processes. Within each seed, the tiny gate still precedes
+validation/test. `--fail-on-fit-gate` preserves the MNIST report and exits 2
+when a gate fails; the runner distinguishes that scientific block from a
+process failure. Per-split `progress.json` records measured-image counts.
+See the README for status inspection, CPU budgets and per-experiment ZIPs.
+
 ## Denoising: direct baseline and matched noise
 
 ```bash

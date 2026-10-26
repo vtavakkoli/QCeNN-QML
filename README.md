@@ -123,15 +123,73 @@ lists missing operators and input/readout costs, and reports
 **NOT_IMPLEMENTED_NOT_DEMONSTRATED** for full pretrained model conversion.
 See [scope and accounting](docs/QUANTUM_CORE.md).
 
-## Run everything in the background and zip results
+## Run experiments in parallel and check completion
 
 ```bash
-nohup bash scripts/run_quantum_corrections.sh > quantum-corrections.log 2>&1 < /dev/null &
+nohup bash -c 'exec bash scripts/run_quantum_corrections.sh' \
+  > quantum-corrections.log 2>&1 < /dev/null &
 ```
 
-The script uses `.venv-qcenn/bin/python`, creates a fresh timestamped directory,
-and runs Linux `zip` after successful completion. Override `QCENN_PYTHON` to
-choose another interpreter. Monitor `tail -f quantum-corrections.log`.
+The script uses `.venv-qcenn/bin/python`, creates a fresh directory, and runs
+the three MNIST seeds, diffusion, attention and coherent text as independent
+CPU workers. Each MNIST seed must pass its tiny training gate before its own
+validation/test; these dependent stages are never run ahead of the gate.
+The attention audit and combined report wait for their required inputs.
+
+Check the latest run and follow the overall log:
+
+```bash
+bash scripts/run_quantum_corrections.sh --status
+tail -f quantum-corrections.log
+```
+
+The status table refreshes about every five seconds; a heartbeat appears in
+the overall log every 30 seconds. Every job logs `START` and `END`; the runner
+prints a final **`FINISHED state=... exit=...`** line. A log file existing is
+not proof that the job has finished.
+
+| Final state | Exit | Meaning |
+|---|---:|---|
+| `DONE` | 0 | All requested stages and archives succeeded. |
+| `DONE_WITH_BLOCKED_TESTS` | 2 | Execution finished; at least one MNIST fit gate failed, so its validation/test was skipped. |
+| `FAILED` | 1 | A process, required report, dependency or archive failed. |
+| `INTERRUPTED` | 130/143 | The runner was stopped; active children are terminated and partial outputs remain labeled. |
+
+The output directory contains `STATUS.txt`, a final state marker, per-job
+`logs/`, reproducible `commands/`, reports under `experiments/`, and separate
+native ZIP files with SHA-256 checksums under `archives/`: `mnist-42.zip`,
+`mnist-43.zip`, `mnist-44.zip`, `diffusion.zip`, `attention.zip`, `text.zip`,
+`smol-audit.zip`, and `summary.zip`. Each ZIP includes its own experiment
+status, log and command; failed jobs preserve explicitly labeled partial data.
+The final state reports execution success, not quantum advantage or full Smol
+implementation. The Smol audit still reports missing transformer components.
+
+The default CPU budget respects available affinity and container quota, with
+up to six independent workers. It divides that budget across Aer MPS thread
+pools and disables nested BLAS/transpilation pools. For example, use four
+workers within a 32-core allocation:
+
+```bash
+QCENN_CPUS=32 QCENN_JOBS=4 nohup bash -c 'exec bash scripts/run_quantum_corrections.sh' \
+  > quantum-corrections.log 2>&1 < /dev/null &
+```
+
+Override `QCENN_PYTHON` to choose another interpreter; reduce `QCENN_JOBS` if
+memory is constrained. These are **CPU MPS simulations**; GPU memory is not
+used by this backend, and utilization depends on the circuit and MPS algorithm.
+Each experiment records its CPU thread budget. Use `--status OUTPUT_DIRECTORY`
+to inspect an older run; `QCENN_LATEST_FILE` can isolate the latest-run pointer
+when running separate batches.
+
+For a quick check of parallel execution and archiving:
+
+```bash
+bash scripts/run_quantum_corrections.sh --smoke
+```
+
+Smoke mode explicitly uses the digits proxy and tiny corpora. Its output is
+labeled `smoke`; it is not real-MNIST evidence. Fit failures still produce
+`DONE_WITH_BLOCKED_TESTS` and exit 2 rather than silently claiming test success.
 
 ## Validation and historical references
 
