@@ -47,7 +47,7 @@ def measure_split(images, labels, keys, key_labels, *, rounds, encoding, damping
 
 def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_class=1,
              test_per_class=1, side=8, rounds=4, encoding="amplitude", damping=0.,
-             fit_threshold=.9, shots=1024, batch_size=2, max_qubits=96,
+             fit_threshold=1., shots=1024, batch_size=2, max_qubits=96,
              max_records=32, include_reset_control=False, data_root="data",
              no_download=False, output_dir="results/quantum-mnist", validation_only=False):
     config = dict(locals())
@@ -148,7 +148,7 @@ def main(argv=None):
         parser.add_argument("--"+name,type=int,default=default)
     parser.add_argument("--encoding",choices=["amplitude","angle"],default="amplitude")
     parser.add_argument("--damping",type=float,default=0.)
-    parser.add_argument("--fit-threshold",type=float,default=.9)
+    parser.add_argument("--fit-threshold",type=float,default=1.)
     parser.add_argument("--include-reset-control",action="store_true")
     parser.add_argument("--validation-only",action="store_true",
         help="Stop after the tiny retrieval gate and validation references; never evaluate test")

@@ -200,11 +200,12 @@ def test_matched_diffusion_reuses_native_circuits_and_classical_reference(tmp_pa
     assert json.loads((tmp_path/'diffusion/progress.json').read_text())['status']=='complete'
 
 
-def test_tiny_fit_failure_blocks_validation_and_test(monkeypatch,tmp_path):
+@pytest.mark.parametrize('accuracy',[0.,.9])
+def test_tiny_fit_failure_blocks_validation_and_test(monkeypatch,tmp_path,accuracy):
     import qcenn_qml.quantum_mnist as module
     called=[]
     def fake(images,labels,*args,**kwargs):
-        called.append(len(images)); return {'accuracy':0.}
+        called.append(len(images)); return {'accuracy':accuracy}
     monkeypatch.setattr(module,'measure_split',fake)
     r=module.evaluate(dataset='digits-proxy',side=4,shots=32,output_dir=str(tmp_path/'mnist'))
     assert len(called)==1 and r['test_accuracy_mean'] is None

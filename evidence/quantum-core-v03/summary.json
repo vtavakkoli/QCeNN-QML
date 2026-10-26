@@ -2,9 +2,9 @@
   "scope": "Small simulator/operator evidence; no QPU, pretrained Smol execution or quantum neural-weight training",
   "verified_public_core_commit": "9dc7a43a101b2ec8b0b8dceb95b8d9632e6ca056",
   "verification": {
-    "raw_readouts": 158,
-    "qpy_examples": 20,
-    "source_files_verified": 160
+    "raw_readouts": 188,
+    "qpy_examples": 23,
+    "source_files_verified": 176
   },
   "mnist": {
     "dataset": "original MNIST",
@@ -308,8 +308,8 @@
       "No quantum speedup or hardware feasibility follows from this resource ledger"
     ]
   },
-  "runtime_commit_note": "Runtime local bbbf0be and public core 9dc7a43 have identical Git trees. Source fingerprints match the archived core-9dc7a43 or current source snapshots. The final validation-only checks include the new clean success ladder and retained damping environments; original reports keep their original provenance.",
-  "software_tests_passed": 57,
+  "runtime_commit_note": "Runtime local bbbf0be and public core 9dc7a43 have identical Git trees. Source fingerprints match the archived core-9dc7a43 or validation-ebd6b91 source snapshots. Validation-only checks use clean success ladders and retained damping environments. The full-fit follow-up explicitly sets threshold 1.0; the final CLI also makes 1.0 the default. Original reports keep their original provenance.",
+  "software_tests_passed": 58,
   "mnist_validation_diagnostics": {
     "amplitude": {
       "configuration": {
@@ -495,6 +495,52 @@
       "test_evaluated": false,
       "classical_optimizer": false,
       "quantum_neural_weight_training_implemented": false
+    },
+    "full-fit-r4": {
+      "configuration": {
+        "dataset": "mnist",
+        "seeds": [
+          42
+        ],
+        "train_per_class": 1,
+        "validation_per_class": 1,
+        "test_per_class": 1,
+        "side": 4,
+        "rounds": 4,
+        "encoding": "amplitude",
+        "damping": 0.0,
+        "fit_threshold": 1.0,
+        "shots": 1024,
+        "batch_size": 2,
+        "max_qubits": 96,
+        "max_records": 32,
+        "include_reset_control": false,
+        "data_root": "data",
+        "no_download": false,
+        "output_dir": "artifacts/quantum-corrections-validation/full-fit-r4",
+        "validation_only": true
+      },
+      "splits": {
+        "tiny_train": {
+          "accuracy": 1.0,
+          "acceptance": 0.3841796875,
+          "fit_gate_passed": true
+        },
+        "validation": {
+          "accuracy": 0.5,
+          "acceptance": 0.39248046875,
+          "fit_gate_passed": null
+        },
+        "validation_k0_reference": {
+          "accuracy": 0.4,
+          "acceptance": 0.76240234375,
+          "fit_gate_passed": null
+        }
+      },
+      "test_evaluated": false,
+      "classical_optimizer": false,
+      "quantum_neural_weight_training_implemented": false
     }
-  }
+  },
+  "default_tiny_retrieval_threshold": 1.0
 }

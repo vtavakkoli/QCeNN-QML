@@ -6,7 +6,22 @@ models are nonparametric raw-record memories with no fitted CPU prediction
 weights or classical optimizer. Input loading, compilation and final decoding
 remain classical; the entire host program is not purely quantum.
 
-## Original-MNIST tiny retrieval gate
+## Strict tiny-set gate on original MNIST
+
+The default now requires **100% tiny training-memory retrieval**. A separate
+four-round validation-only run (seed 42, ten images per split, 4x4 features,
+1,024 shots) retrieves all ten training examples and scores 50% on validation;
+k=0 scores 40% on the same ten validation images. Accepted-shot fractions
+are 38.4%, 39.2% and 76.2%, respectively. This one-example validation difference
+does not establish generalization or an advantage. Test is not evaluated.
+
+```bash
+python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
+  --rounds 4 --shots 1024 --fit-threshold 1 --validation-only \
+  --output-dir results/reproduce-mnist-full-fit
+```
+
+## Earlier two-round diagnostic with an explicit 90% gate
 
 One seed (42), ten training images, ten validation images, ten test images;
 4x4 images, two overlap-product updates, zero damping, 1,024 shots per circuit.
@@ -20,10 +35,11 @@ One seed (42), ten training images, ten validation images, ten test images;
 | Test k=0 reference | 20% | 76.1% |
 | Test refreshed-index control | 20% | 57.6% |
 
-The configured 0.9 retrieval gate passes; this demonstrates memorization, not
+The explicitly configured 0.9 retrieval gate passes; this demonstrates memorization, not
 neural fitting or useful generalization. The test result does not improve on
 k=0. These tiny selections differ from the earlier three-seed neural benchmark;
 their percentages must not be presented as a like-for-like improvement.
+This run does not pass the new, stricter default gate of 1.0.
 
 ```bash
 python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
@@ -34,8 +50,10 @@ python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
 ## Training/validation diagnostics before further benchmarking
 
 All diagnostics use the same seed, source IDs, 4x4 features and two rounds.
-The 1,024-shot settings compare encoding/damping at matched shot budgets.
+The two-round 1,024-shot settings compare encoding/damping at matched shot budgets.
 No test inference is performed by these `--validation-only` runs.
+These initial diagnostics explicitly use the older 0.9 retrieval threshold;
+the later four-round run above meets the stricter 1.0 default.
 
 | Encoding | Damping | Shots | Tiny training retrieval | Validation |
 |---|---:|---:|---:|---:|
@@ -54,7 +72,7 @@ unimplemented. No larger benchmark follows from these checks.
 
 ```bash
 python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
-  --rounds 2 --encoding amplitude --damping 0 --shots 1024 --validation-only \
+  --rounds 2 --encoding amplitude --damping 0 --shots 1024 --fit-threshold 0.9 --validation-only \
   --output-dir results/reproduce-mnist-validation
 ```
 
@@ -106,10 +124,10 @@ transformer operators and quantum neural-weight training were not executed.
 
 `summary.json` records the detailed resources, limitations and configuration.
 `raw-evidence.tar.gz` preserves all raw reports, memories, split IDs, QPY examples
-and the combined audit. Verification recalculated 158 readouts, reloaded 20 QPY
-examples and checked 160 source-file fingerprints. Runtime local commit
+and the combined audit. Verification recalculated 188 readouts, reloaded 23 QPY
+examples and checked 176 source-file fingerprints. Runtime local commit
 `bbbf0be` and public core commit `9dc7a43` have identical Git trees; source hashes
-are checked against the archived public-core and current source snapshots.
+are checked against the archived public-core and validation source snapshots.
 The final validation runs include the clean success ladder and retained damping
 environments. JSON reports preserve their original runtime provenance.
 
@@ -120,7 +138,7 @@ tar -xzf evidence/quantum-core-v03/raw-evidence.tar.gz -C results/extracted-evid
 python scripts/verify_quantum_evidence.py results/extracted-evidence
 ```
 
-57 software/operator tests pass. Classical input preparation and host control,
+58 software/operator tests pass. Classical input preparation and host control,
 numerical MPS simulation (threshold 1e-20, direct measurement sampling), tiny
 datasets and postselection costs are explicit limits. No QPU performance,
 fully quantum host pipeline or quantum advantage is claimed.

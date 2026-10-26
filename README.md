@@ -48,7 +48,8 @@ python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 \
 
 A resident quantum example index survives repeated overlap filters. With
 fidelity p, r rounds give monotone weights p**r; labels are read from quantum
-registers. Tiny training-memory retrieval must pass before validation/test.
+registers. Tiny training-memory retrieval must reach 100% by default before
+validation/test.
 This checks memorization, not fitted neural weights or generalization.
 The measured one-update **k=0 quantum reference** is always included; k=1 is
 not a default. Optional reset control uses a fresh quantum index per update.

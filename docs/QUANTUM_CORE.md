@@ -31,7 +31,7 @@ scoring. The discarded branches remain in the environment until final readout;
 postselection probability, actual shots and native gates are charged.
 
 The tiny training-memory retrieval accuracy must reach `--fit-threshold`
-(default 0.9) before validation/test are evaluated. This is a memorization
+(default 1.0: every training example) before validation/test are evaluated. This is a memorization
 sanity check, **not** fitted neural weights or evidence of generalization.
 Failed gates preserve a report and skip later splits. Split IDs and hashes,
 raw memory vectors, raw counts, Wilson intervals and QPY examples are saved.
