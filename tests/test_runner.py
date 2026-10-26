@@ -116,6 +116,33 @@ def test_mnist_only_does_not_repeat_completed_other_experiments(tmp_path,fake_py
     assert not (output/'experiments/diffusion').exists()
 
 
+def test_studies_use_allocated_worker_budgets_and_separate_archives(tmp_path,fake_python):
+    output=tmp_path/'studies'
+    result=subprocess.run(['bash',str(RUNNER),'--studies','--smoke',str(output)],
+        env=environment(fake_python,QCENN_JOBS='3'),capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stdout+result.stderr
+    names={'mnist-study','diffusion-study','transformer-block','smol-audit','summary'}
+    assert {p.stem for p in (output/'archives').glob('*.zip')}==names
+    for name in ('mnist-study','diffusion-study'):
+        trace=json.loads((output/f'experiments/{name}/trace.json').read_text())
+        assert trace['argv'][trace['argv'].index('--jobs')+1]==str(trace['threads'])
+        assert trace['argv'][trace['argv'].index('--cpu-budget')+1]==str(trace['threads'])
+    audit=json.loads((output/'experiments/smol-audit/trace.json').read_text())
+    assert '--transformer-report' in audit['argv']
+    summary=json.loads((output/'experiments/summary/trace.json').read_text())
+    assert all('--'+name in summary['argv'] for name in ('mnist-study','diffusion-study','transformer-block'))
+
+
+def test_separate_diffusion_study_skips_mnist_and_audit(tmp_path,fake_python):
+    output=tmp_path/'diffusion-only'
+    result=subprocess.run(['bash',str(ROOT/'scripts/run_research_studies.sh'),
+        '--study-only','diffusion',str(output)],env=environment(fake_python,QCENN_JOBS='1'),
+        capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert {p.stem for p in (output/'archives').glob('*.zip')}=={'diffusion-study','summary'}
+    assert not (output/'logs/data-prepare.log').exists()
+
+
 def test_failed_job_keeps_partial_output_and_other_experiments(tmp_path,fake_python):
     output,process=run(tmp_path,fake_python,QCENN_TEST_FAIL='attention')
     assert process.returncode==1

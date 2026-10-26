@@ -13,6 +13,19 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e '.[test]'
       - run: python -m pytest -q
+      - name: Staged studies, scientific blocking and per-track archives (proxy diagnostics)
+        env:
+          QCENN_PYTHON: python
+          QCENN_CPUS: '2'
+          QCENN_JOBS: '2'
+        run: |
+          set +e
+          bash scripts/run_research_studies.sh --smoke results/ci/studies
+          qcenn_study_code=$?
+          set -e
+          case "$qcenn_study_code" in 0|2) ;; *) exit "$qcenn_study_code" ;; esac
+          bash scripts/run_research_studies.sh --status results/ci/studies
+          for archive in results/ci/studies/archives/*.zip; do unzip -t "$archive"; done
       - name: Parallel runner, gate status and per-experiment ZIPs (digits proxy)
         env:
           QCENN_PYTHON: python

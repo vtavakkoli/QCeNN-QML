@@ -5,11 +5,15 @@ from pathlib import Path
 
 
 def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
-          recurrent=None,attention=None,smol_feasibility=None):
-    sources = {"mnist":mnist, "smol":smol, "diffusion":diffusion}
+          recurrent=None,attention=None,smol_feasibility=None,
+          mnist_study=None,diffusion_study=None,transformer_block=None):
+    sources = {key:value for key,value in (("mnist",mnist),("smol",smol),("diffusion",diffusion)) if value}
     if diffusion_noisy:
         sources["diffusion_noisy"] = diffusion_noisy
     for kind,source in (("recurrent",recurrent),("attention",attention),("smol_feasibility",smol_feasibility)):
+        if source:
+            sources[kind]=source
+    for kind,source in (("mnist_study",mnist_study),("diffusion_study",diffusion_study),("transformer_block",transformer_block)):
         if source:
             sources[kind]=source
     found,missing={},[]
@@ -100,7 +104,26 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
             f"- Status: {x.get('full_model_quantum_conversion_test')}.",
             f"- Explicit resident basis-encoding weight qubits: {x.get('chosen_basis_encoding_weight_qubits')}.",
             '- This is an encoding estimate, not a lower bound on all quantum implementations.','']
-    if missing:lines+=["## Experiments not executed here",""]+["- "+p for p in missing]+[""]
+    if 'mnist_study' in found:
+        x=found['mnist_study']
+        lines+=['## Staged MNIST study','',f"- Status: {x.get('status')}; test evaluated: {x.get('test_evaluated')}.",
+            '- Independent data/measurement seeds; equal-shot and equal-CNOT comparisons; validation-only selection.','',
+            '| Model | Budget | Test examples | Accuracy | Shot-weighted CX |','|---|---|---:|---:|---:|']
+        for row in x.get('test_summary',[]):
+            lines.append(f"| {row['model']} | {row['mode']} | {row['n']} | {row['accuracy']:.4f} | {row['cx_shot_weighted_total']} |")
+        lines.append('')
+    if 'diffusion_study' in found:
+        x=found['diffusion_study']
+        lines+=['## Separate multi-corpus diffusion study','',f"- Status: {x.get('status')}; recorded runs: {len(x.get('runs',[]))}.",
+            '- Identical native circuits for noiseless/noisy readout; direct classical table evaluated separately.',
+            '- Unknown words, unseen contexts and invalid noisy token codes retain their error mass.','']
+    if 'transformer_block' in found:
+        x=found['transformer_block']
+        lines+=['## Complete small coherent transformer block','',f"- Status: {x.get('status')}.",
+            '- Two tokens, width two, one head; three-bit fixed-point reversible arithmetic.',
+            '- QKV, RoPE, causal softmax, coherent weighted vectors, output projection, RMSNorm, residuals and SwiGLU.',
+            '- Fixed toy weights; no pretrained Smol weights, quantum neural training or hardware execution.','']
+    if missing:lines+=["## Requested reports that are missing",""]+["- "+p for p in missing]+[""]
     lines+=["## Conclusion","",
             "All experiments are feasibility demonstrations. They do not establish speedup, advantage, physically executed noise benefits, or a full 135M-parameter quantum language model.",""]
     (target/"combined.md").write_text("\n".join(lines),encoding="utf8")
@@ -110,14 +133,17 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mnist",default="results/ci/mnist/report.json")
-    parser.add_argument("--smol",default="results/ci/smol/report.json")
-    parser.add_argument("--diffusion",default="results/ci/diffusion/report.json")
+    parser.add_argument("--mnist")
+    parser.add_argument("--smol")
+    parser.add_argument("--diffusion")
     parser.add_argument("--output-dir",default="results/ci/summary")
     parser.add_argument("--diffusion-noisy",default=None)
     parser.add_argument('--recurrent',nargs='+',help='One or more independently recorded MNIST seed reports')
     parser.add_argument('--attention')
     parser.add_argument('--smol-feasibility')
+    parser.add_argument('--mnist-study')
+    parser.add_argument('--diffusion-study')
+    parser.add_argument('--transformer-block')
     return build(**vars(parser.parse_args(argv)))
 
 if __name__=="__main__":

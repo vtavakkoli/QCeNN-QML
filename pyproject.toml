@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qcenn-qml"
-version = "0.3.0"
-description = "Quantum memory inference, matched denoising, and reversible softmax attention"
+version = "0.4.0"
+description = "Staged quantum memory studies, matched denoising, and a coherent fixed-point transformer block"
 license = "LicenseRef-QCeNN-QML-NC-Commercial"
 license-files = ["LICENSE", "NOTICE.md"]
 requires-python = ">=3.10"
@@ -18,6 +18,9 @@ test = ["pytest>=8", "scikit-learn>=1.4"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+qcenn_qml = ["assets/*.json", "assets/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -233,8 +233,10 @@ def provenance():
         except PackageNotFoundError:
             pass
     root = Path(__file__).resolve().parents[2]
-    hashes = {f"src/qcenn_qml/{path.name}": hashlib.sha256(path.read_bytes()).hexdigest()
-              for path in sorted(Path(__file__).resolve().parent.glob("*.py"))}
+    package = Path(__file__).resolve().parent
+    hashes = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in sorted(package.rglob('*')) if path.is_file() and
+              (path.suffix == '.py' or path.parent == package / 'assets')}
     for name in ("pyproject.toml",):
         if (root / name).exists():
             hashes[name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
