@@ -14,11 +14,14 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
             sources[kind]=source
     found,missing={},[]
     for kind,source in sources.items():
-        path=Path(source)
-        if path.exists():
-            found[kind]=json.loads(path.read_text(encoding="utf8"))
-        else:
-            missing.append(str(path))
+        paths=source if isinstance(source,(list,tuple)) else [source]
+        for index,source_path in enumerate(paths):
+            path=Path(source_path)
+            key=kind if len(paths)==1 else f'{kind}_{index}'
+            if path.exists():
+                found[key]=json.loads(path.read_text(encoding="utf8"))
+            else:
+                missing.append(str(path))
     result={
         "purpose":"QCeNN-QML reproducible cross-experiment audit",
         "found_experiments":list(found),"missing_experiments":missing,
@@ -74,12 +77,17 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
             lines.append(f"| {k} | {item['measured_correct_token_probability']:.4f} | "
                          + (f"{ref:.4f}" if ref is not None else "not run") + " |")
         lines+=["","Readout flips are a measurement-error model, not a beneficial denoising resource.",""]
-    if 'recurrent' in found:
-        x=found['recurrent']
-        lines+=['## Quantum-memory MNIST','',
+    for kind,x in found.items():
+        if kind!='recurrent' and not kind.startswith('recurrent_'):
+            continue
+        lines+=[f'## Quantum-memory MNIST ({kind})','',
             f"- Tiny training fit gate required: {x.get('tiny_fit_gate_required')}.",
             f"- Mean evaluated test accuracy: {x.get('test_accuracy_mean')}.",
             '- Nonparametric quantum exemplar memory, with no classical optimizer.','']
+        for run in x.get('runs',[]):
+            gate=run.get('splits',{}).get('tiny_train',{}).get('fit_gate_passed')
+            lines.append(f"- Seed {run['seed']}: fit gate {gate}; test evaluated {run.get('test_evaluated')}.")
+        lines.append('')
     if 'attention' in found:
         x=found['attention']
         lines+=['## Reversible quantum attention','',
@@ -107,7 +115,7 @@ def main(argv=None):
     parser.add_argument("--diffusion",default="results/ci/diffusion/report.json")
     parser.add_argument("--output-dir",default="results/ci/summary")
     parser.add_argument("--diffusion-noisy",default=None)
-    parser.add_argument('--recurrent')
+    parser.add_argument('--recurrent',nargs='+',help='One or more independently recorded MNIST seed reports')
     parser.add_argument('--attention')
     parser.add_argument('--smol-feasibility')
     return build(**vars(parser.parse_args(argv)))

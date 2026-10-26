@@ -31,6 +31,8 @@ def measure_split(images, labels, keys, key_labels, *, rounds, encoding, damping
             with (Path(output_dir)/"example-native.qpy").open("wb") as stream:
                 qpy.dump(native[0], stream)
         rows.extend(decode_postselection(c, 4, rounds, 10) for c in counts)
+        write_json(Path(output_dir)/'progress.json',{'completed_images':len(rows),
+            'total_images':len(images),'status':'complete' if len(rows)==len(images) else 'running'})
         print(f"  measured {len(rows)}/{len(images)} images", flush=True)
     result = {**classification_metrics(labels, [r["prediction"] for r in rows]),
         "predictions": rows, "accepted_shot_fraction": sum(r["accepted_shots"] for r in rows)/(shots*len(rows)),
@@ -101,6 +103,10 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=1, validation_per_cla
                 batch_size=batch_size,max_qubits=max_qubits,output_dir=target)
             if name == "tiny_train":
                 splits[name]["fit_gate_passed"] = splits[name]["accuracy"] >= fit_threshold
+                print(f"seed={seed} fit gate={'PASSED' if splits[name]['fit_gate_passed'] else 'FAILED'}: "
+                    f"accuracy={splits[name]['accuracy']:.3f}, required={fit_threshold:.3f}",flush=True)
+                if not splits[name]['fit_gate_passed']:
+                    print(f'seed={seed} BLOCKED: validation and test skipped after failed tiny retrieval gate',flush=True)
             if name == 'validation':
                 target=run_dir/'validation_k0_reference'; target.mkdir()
                 splits['validation_k0_reference']=measure_split(validation,train_labels[vi],keys,train_labels[ti],
@@ -152,10 +158,17 @@ def main(argv=None):
     parser.add_argument("--include-reset-control",action="store_true")
     parser.add_argument("--validation-only",action="store_true",
         help="Stop after the tiny retrieval gate and validation references; never evaluate test")
+    parser.add_argument('--fail-on-fit-gate',action='store_true',
+        help='Save all reports, then exit 2 if any tiny retrieval gate failed (for batch runners)')
     parser.add_argument("--data-root",default="data")
     parser.add_argument("--no-download",action="store_true")
     parser.add_argument("--output-dir",default="results/quantum-mnist")
-    return evaluate(**vars(parser.parse_args(argv)))
+    config=vars(parser.parse_args(argv))
+    fail_on_gate=config.pop('fail_on_fit_gate')
+    report=evaluate(**config)
+    if fail_on_gate and any(not r['splits']['tiny_train']['fit_gate_passed'] for r in report['runs']):
+        raise SystemExit(2)
+    return report
 
 
 if __name__=="__main__":
