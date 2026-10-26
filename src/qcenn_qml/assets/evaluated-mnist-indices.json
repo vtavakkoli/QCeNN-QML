@@ -1,0 +1,51 @@
+{
+  "dataset": "mnist",
+  "source_commit": "47a427e5da7e508ca80d328528a4d805ace351c9",
+  "reason": "Already inspected in MNIST seed 42/43/44 archives; exclude from fresh tests",
+  "indices": [
+    177,
+    487,
+    704,
+    791,
+    1009,
+    1166,
+    1262,
+    1425,
+    1636,
+    1744,
+    4653,
+    4801,
+    4855,
+    5187,
+    5498,
+    5901,
+    6044,
+    6345,
+    6363,
+    6567,
+    7118,
+    7130,
+    7411,
+    7612,
+    7816,
+    8075,
+    8506,
+    8511,
+    8527,
+    8860
+  ],
+  "manifests": [
+    {
+      "seed": 42,
+      "test_split_sha256": "7742551861f16279bc3d0ca9019baff3bb38db296afb329de5e6bc13af4d9541"
+    },
+    {
+      "seed": 43,
+      "test_split_sha256": "e2ae1d45f5c1010f402b51c88ca3c76b5ddd6eacb565df4063fff9a92f2b40de"
+    },
+    {
+      "seed": 44,
+      "test_split_sha256": "fe7b3c7b2d049d4e1510f64b409fb4651a7d1c3d9e879e6d778994ceaff1b710"
+    }
+  ]
+}

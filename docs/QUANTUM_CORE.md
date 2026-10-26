@@ -1,5 +1,9 @@
 # Quantum model cores and honest limits
 
+Version 0.4 adds the [staged convergence/memory/ablation protocol and complete
+small fixed-point coherent block](STAGED_STUDIES.md). The model-core and
+classical-interface disclosures below continue to apply.
+
 Version 0.3 changes the default MNIST, text, and denoising paths to quantum
 memory inference with no classical optimizer, fitted classical prediction
 weights, or intermediate CPU reconstruction of quantum state. Numerical model
@@ -163,9 +167,10 @@ logical weight qubits**, before workspace or error correction. This is one
 encoding estimate, not a universal lower bound or an impossibility theorem.
 QROM can trade registers for loading circuits; loading is not free.
 
-Full-precision projections, RoPE, RMSNorm, SiLU MLPs, a coherent weighted-sum
-hidden vector, the full vocabulary head, cache and all 30 composed layers are
-unimplemented. No actual pretrained weights or physical QPU jobs execute in
+The v0.4 three-bit toy block includes projections, quarter-turn RoPE, RMSNorm,
+SwiGLU, residuals and a coherent weighted-sum vector. Their full-Smol-precision
+versions, the vocabulary head, cache and all 30 layers remain unimplemented.
+No actual pretrained weights or physical QPU jobs execute in
 the audit. It reports **NOT_IMPLEMENTED_NOT_DEMONSTRATED** for a full quantum
 Smol model, even when the small attention component passes. Classical MAC
 counts in the ledger are not measured quantum-gate counts.

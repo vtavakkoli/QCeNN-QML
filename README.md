@@ -1,8 +1,8 @@
 # QCeNN-QML
 
-**Quantum-memory MNIST, coherent text memory, matched denoising, and signed quantum softmax attention.**
+**Staged quantum-memory MNIST, matched text denoising, and a complete small coherent fixed-point transformer block.**
 
-Version 0.3 defaults have no classical optimizer, fitted classical prediction
+Version 0.4 defaults have no classical optimizer, fitted classical prediction
 weights, or intermediate CPU state/token updates. Raw records are loaded into
 quantum memory; model outputs come from gates and final measurements. These
 are **nonparametric memories, not quantum neural-weight training**. Input
@@ -10,9 +10,10 @@ encoding, compilation, Aer simulation and final counting remain classical,
 so the entire host pipeline is not purely quantum.
 
 The full pretrained SmolLM2-135M is **not converted or executed** here. A small
-attention component and an explicit full-model coverage/resource audit are
-implemented. Historical hybrid experiments remain explicit legacy references.
-See [the v0.3 protocol](docs/QUANTUM_CORE.md) and [research rules](AGENTS.md).
+attention component, a two-token fixed-weight coherent block, and an explicit
+full-model coverage/resource audit are implemented. Historical hybrid
+experiments remain explicit legacy references. See [the staged study protocol](docs/STAGED_STUDIES.md),
+[quantum core definitions](docs/QUANTUM_CORE.md) and [research rules](AGENTS.md).
 
 ## License, attribution, and commercial use
 
@@ -37,6 +38,51 @@ git clone https://github.com/vtavakkoli/QCeNN-QML.git
 cd QCeNN-QML
 python -m pip install -e ".[mnist,test]"
 ```
+
+## Staged studies and separate experiment ZIPs
+
+```bash
+nohup bash -c 'exec bash scripts/run_research_studies.sh' \
+  > research-studies.log 2>&1 < /dev/null &
+bash scripts/run_research_studies.sh --status
+```
+
+This runs MNIST, diffusion and the coherent block concurrently within the CPU
+affinity/cgroup budget. `QCENN_CPUS=10 QCENN_JOBS=3` selects a ten-CPU budget
+and three concurrent tracks. MNIST/diffusion parallelize independent jobs inside
+their shares. The fit gate precedes validation; frozen selection precedes test.
+Each track gets a separate native ZIP/checksum, log and explicit completion state.
+Select one with `--study-only mnist`, `diffusion` or `transformer`.
+`--smoke` uses the digits proxy and small text budgets. Exit 2 means a scientific
+gate blocked MNIST testing; its report and archive explain why. Exit 0 means
+execution completed, not that accuracy improved.
+
+MNIST measures rounds 1/2/4 with independent data/measurement seeds, expands to
+20/30 records, and compares encoding/damping using validation only. Candidates
+need 100% measured training-memory retrieval and stable validation predictions.
+Equal-shot and identical per-image CX budgets are both reported. A hashed freeze
+precedes testing 100 fresh images per digit per data seed; the 30 already
+inspected images from the uploaded runs are excluded. Additional exclusions,
+separate validation/test commands and resumable checkpoints are documented in
+[STAGED_STUDIES.md](docs/STAGED_STUDIES.md).
+
+```bash
+.venv-qcenn/bin/python -m qcenn_qml.mnist_study --phase validation \
+  --jobs 6 --cpu-budget 6 --output-dir results/mnist-validation
+.venv-qcenn/bin/python -m qcenn_qml.diffusion.study --corpus-files corpus-a.txt corpus-b.txt \
+  --examples 0 --jobs 4 --cpu-budget 4 --output-dir results/diffusion-broader
+.venv-qcenn/bin/python -m qcenn_qml.quantum_transformer --shots 256 \
+  --output-dir results/coherent-block
+```
+
+Use jobs/CPU budgets no larger than available CPUs. Diffusion defaults to three
+authored structured corpora for diagnostics; substantive language claims need
+independent real text. Larger files use explicit training-only vocabulary and
+record caps, duplicate-safe sentence splits, paired noise levels, OOV error
+accounting and sentence-cluster intervals. The coherent block includes QKV,
+quarter-turn RoPE, causal softmax, a coherent weighted vector, RMSNorm, both
+residuals and SwiGLU. Its three-bit fixed weights/positions differ substantially
+from Smol; full pretrained conversion remains unimplemented.
 
 ## Quantum-memory MNIST
 
@@ -91,8 +137,10 @@ and cases. The target stays quantum across replacements. Invalid readout
 codes keep their error mass, and unseen contexts abstain.
 
 The default small English corpus splits whole sentences before windowing;
-`--corpus-file` accepts local text within the declared 256-record/64-token
-budget. `--corpus-kind toy` retains the earlier three-token sanity check.
+`--corpus-file` accepts larger local text with explicit training-only vocabulary
+and raw-memory caps (at most 64 tokens/256 records); OOVs and truncation are
+archived. `--examples 0` evaluates all held-out windows.
+`--corpus-kind toy` retains the earlier three-token sanity check.
 This is a nonparametric memory experiment, not a trained diffusion LLM.
 
 ## Coherent text memory

@@ -2,6 +2,17 @@
 
 ## What exists and what does not
 
+Version 0.4 implements [staged measured studies](STAGED_STUDIES.md): independent
+data/measurement seeds, equal-shot/equal-CNOT convergence, nested 10/20/30-record
+memories, validation-only ablation/selection, hashed freeze and fresh test IDs.
+Broader diffusion adds training-only vocabulary/memory caps, grouped sentence
+splits, paired noise levels and sentence-cluster intervals. A complete
+two-token, width-two, three-bit reversible transformer block includes RMSNorm,
+QKV, quarter-turn RoPE, causal softmax, coherent weighted vectors, residuals and
+SwiGLU. It uses fixed toy weights; full Smol precision and pretrained execution
+remain unimplemented. Larger measured studies must establish scientific
+improvement; smoke/CI success alone does not do so.
+
 Version 0.3 defaults are documented in [QUANTUM_CORE.md](QUANTUM_CORE.md).
 They use raw-record quantum memories with no fitted classical parameters,
 require tiny training retrieval before validation/test, retain k=0 as a
