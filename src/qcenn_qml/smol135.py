@@ -177,6 +177,12 @@ def generate(prompt="the cat", corpus_file=None, vocab_size=8, order=1,
 
 
 def main(argv=None):
+    import sys
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if '--legacy-classical-memory' not in argv:
+        from .quantum_text import main as quantum_main
+        return quantum_main(argv)
+    argv.remove('--legacy-classical-memory')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prompt", default="the cat")
     parser.add_argument("--corpus-file")

@@ -2,10 +2,14 @@
 
 ## Absolute constraints
 
+- Version 0.3 defaults follow the user's no-hybrid MODEL-CORE requirement: no CPU optimizer, fitted CPU inference weights, or intermediate classical hidden-state/token updates. Classical input encoding, gate compilation, simulator execution and final counting remain and MUST be disclosed. Never describe the entire host pipeline as purely quantum.
+- New default MNIST/text/diffusion models are nonparametric raw-record quantum memories. They do NOT implement quantum neural-weight training. Do not relabel exemplar retrieval or raw corpus loading as training the old neural model or transferring Smol weights.
+- Retain old experiments only as explicitly named legacy references: recurrent `--legacy-hybrid`, text `--legacy-classical-memory`, diffusion `--legacy-count-table`. Never execute the old CPU optimizer implicitly. Default overlap comparisons use k=0; k=1 requires an explicit experimental request.
+- Quantum attention currently verifies signed ternary dot products and postselected softmax/value sampling. It is not a full-precision coherent transformer block. The full Smol feasibility audit must keep missing operators, loading/compilation/readout costs and the absence of actual pretrained-weight execution explicit.
 - Investigate QCeNN-MI's coherent recurrence and polynomial/Chebyshev channel research: https://github.com/vtavakkoli/QCeNN-MI. Inspect source, docs, LICENSE and CITATION.cff. Preserve original attribution when reusing any source.
 - No classical trained neural inference head in MNIST or quantum-text paths. Measurements from quantum circuits generate similarity or token probabilities; classical image/token loading, parameter compilation, aggregation, output decoding and optional teacher-text generation are allowed but MUST be reported. These classical operations mean the entire pipeline is not purely quantum.
 - The original `qcenn_qml.mnist` code is **quantum exemplar similarity** with coherent Grover overlap polynomial, not a trained quantum neural network nor QCeNN-MI's original recurrent collision channel. The separate `qcenn_qml.recurrent_mnist` path is a **trainable local recurrent collision classifier**, inspired by QCeNN-MI's reset-channel construction; it does not implement the matrix-inversion residual solver. Keep these methods distinct.
-- Recurrent training uses classical SPSA-Adam on an exact reduced-density simulator and MUST be called hybrid training. Final recurrent test predictions MUST come only from explicit circuit measurement counts. Simulator probabilities are diagnostics, never a fallback for rejected shots. Never tune with the test split. Archive source hashes, split IDs, gate parameters, counts and resources.
+- The LEGACY recurrent training uses classical SPSA-Adam on an exact reduced-density simulator and MUST be called hybrid training. Default quantum-memory predictions MUST come only from explicit circuit measurement counts and must pass the tiny training retrieval gate before validation/test. Simulator probabilities are diagnostics, never a fallback for rejected shots. Never tune with the test split. Archive source hashes, split IDs, raw records, counts and resources.
 - Smol path is **tiny quantum associative n-gram memory** (<=8 tokens, <=2-token context), NOT a converted or executed SmolLM2-135M transformer. Its optional teacher generates classical corpus text; quantum inference uses prepared memory and measured counts, not teacher neural logits at runtime. Never claim 135M weights ran on a quantum processor.
 - Do not quietly substitute sklearn 8x8 digits for real MNIST. The default mnist dataset is actual torchvision MNIST. The optional digits-proxy is only for offline unit/CI smoke.
 - No fabrication of performance, benchmark numbers, QPU executions or advantage. Show circuit width, transpiled depth, shot counts, accepted-shot fraction, classical loading cost, accuracy and uncertainty.
@@ -43,9 +47,10 @@ Use Python modules, not a notebook-only implementation. Keep CLI entry points st
 - Use src/qcenn_qml/diffusion/ and docs/QUANTUM_DIFFUSION.md as the new toy
   quantum denoising baseline. It uses 3-token sequences and controlled
   replacement channels with ancilla resets.
-- The toy corpus is counted classically and quantum-controlled amplitude
+- The LEGACY toy corpus is counted classically and quantum-controlled amplitude
   loaders encode the conditional distributions. This is NOT quantum-trained
   diffusion or natural-language understanding.
+- The new default uses raw-corpus QROM and retained quantum memory, with a separate classical conditional-table reference and paired noiseless/readout-noisy runs of the identical native circuit. Broader text splits whole sentences before making windows. Invalid noisy tokens and unseen contexts must retain their error/abstention mass.
 - Keep noisy forward masking beta distinct from readout bit-flip noise or
   uncontrolled quantum-device errors; an improvement over fully masked
   inputs alone is not evidence that physical noise improves modeling.

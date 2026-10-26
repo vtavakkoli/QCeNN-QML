@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qcenn-qml"
-version = "0.2.0"
-description = "Recurrent quantum MNIST classification and tiny quantum language experiments"
+version = "0.3.0"
+description = "Quantum memory inference, matched denoising, and reversible softmax attention"
 license = "LicenseRef-QCeNN-QML-NC-Commercial"
 license-files = ["LICENSE", "NOTICE.md"]
 requires-python = ">=3.10"

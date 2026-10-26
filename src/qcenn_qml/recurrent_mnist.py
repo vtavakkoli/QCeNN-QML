@@ -255,7 +255,7 @@ def write_json(path, value):
 def evaluate(dataset="mnist", seeds=(42,), train_per_class=20, validation_per_class=5,
              test_per_class=5, exemplars_per_class=2, side=8, training_steps=150,
              batch_size=32, learning_rate=.04, validation_interval=25, shots=1024,
-             overlap_iterations=(0, 1), skip_quantum_overlap=False,
+             overlap_iterations=(0,), skip_quantum_overlap=False,
              include_reset_control=False, data_root="data", no_download=False,
              output_dir="results/recurrent-mnist"):
     seeds = list(seeds)
@@ -392,6 +392,12 @@ def evaluate(dataset="mnist", seeds=(42,), train_per_class=20, validation_per_cl
 
 
 def main(argv=None):
+    import sys
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if "--legacy-hybrid" not in argv:
+        from .quantum_mnist import main as quantum_main
+        return quantum_main(argv)
+    argv.remove("--legacy-hybrid")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=["mnist", "digits-proxy"], default="mnist")
     parser.add_argument("--seeds", type=int, nargs="+", default=[42])
@@ -405,7 +411,7 @@ def main(argv=None):
     parser.add_argument("--learning-rate", type=float, default=.04)
     parser.add_argument("--validation-interval", type=int, default=25)
     parser.add_argument("--shots", type=int, default=1024)
-    parser.add_argument("--overlap-iterations", type=int, choices=[0, 1], nargs="+", default=[0, 1])
+    parser.add_argument("--overlap-iterations", type=int, choices=[0, 1], nargs="+", default=[0])
     parser.add_argument("--skip-quantum-overlap", action="store_true")
     parser.add_argument("--include-reset-control", action="store_true")
     parser.add_argument("--data-root", default="data")

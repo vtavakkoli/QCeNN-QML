@@ -1,8 +1,18 @@
 # QCeNN-QML
 
-**Recurrent quantum MNIST classification**, quantum exemplar baselines, and a tiny SmolLM2-135M-inspired autoregressive language experiment. See [AGENTS.md](AGENTS.md) for the research rules and [the roadmap](docs/RESEARCH_ROADMAP.md).
+**Quantum-memory MNIST, coherent text memory, matched denoising, and signed quantum softmax attention.**
 
-This independent work is inspired by [QCeNN-MI](https://github.com/vtavakkoli/QCeNN-MI). Version 0.2 adds a **trainable local recurrent collision classifier** with persistent quantum memory and a measured quantum readout. It specializes the collision/reset idea locally; it does not implement the upstream matrix-inversion residual solver. The original `qcenn_qml.mnist` remains an exemplar-overlap / Grover polynomial baseline. Experimental quantum predictions come from measured circuits; data preparation, orchestration and readout are classical. Recurrent gate training uses classical optimization and is explicitly **hybrid**.
+Version 0.3 defaults have no classical optimizer, fitted classical prediction
+weights, or intermediate CPU state/token updates. Raw records are loaded into
+quantum memory; model outputs come from gates and final measurements. These
+are **nonparametric memories, not quantum neural-weight training**. Input
+encoding, compilation, Aer simulation and final counting remain classical,
+so the entire host pipeline is not purely quantum.
+
+The full pretrained SmolLM2-135M is **not converted or executed** here. A small
+attention component and an explicit full-model coverage/resource audit are
+implemented. Historical hybrid experiments remain explicit legacy references.
+See [the v0.3 protocol](docs/QUANTUM_CORE.md) and [research rules](AGENTS.md).
 
 ## License, attribution, and commercial use
 
@@ -19,109 +29,135 @@ See [LICENSE](LICENSE) for legally controlling terms, [NOTICE.md](NOTICE.md) for
 
 ## Installation
 
-Requires Python 3.10+.
+Python 3.10+; tested environment versions are in `requirements-tested.txt`.
+Original MNIST uses checksummed IDX archives and does not require PyTorch.
 
-    git clone https://github.com/vtavakkoli/QCeNN-QML.git
-    cd QCeNN-QML
-    python -m pip install -e '.[mnist,test]'
+```bash
+git clone https://github.com/vtavakkoli/QCeNN-QML.git
+cd QCeNN-QML
+python -m pip install -e ".[mnist,test]"
+```
 
-## Recurrent ten-class MNIST (v0.2)
+## Quantum-memory MNIST
 
-Small genuine-MNIST end-to-end check:
+```bash
+python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 \
+  --train-per-class 1 --validation-per-class 1 --test-per-class 1 \
+  --rounds 4 --shots 1024 --include-reset-control --output-dir results/quantum-mnist
+```
 
-    python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --train-per-class 2 --validation-per-class 1 --test-per-class 1 --exemplars-per-class 1 --training-steps 5 --shots 256 --output-dir results/recurrent-smoke
+A resident quantum example index survives repeated overlap filters. With
+fidelity p, r rounds give monotone weights p**r; labels are read from quantum
+registers. Tiny training-memory retrieval must pass before validation/test.
+This checks memorization, not fitted neural weights or generalization.
+The measured one-update **k=0 quantum reference** is always included; k=1 is
+not a default. Optional reset control uses a fresh quantum index per update.
+All postselection, raw counts, source/split hashes, gates and QPYs are retained.
 
-Larger comparison across three seeded train/validation/test selections:
+Validate alternative encodings with a matched small image resolution:
 
-    python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 43 44 --train-per-class 100 --validation-per-class 20 --test-per-class 20 --exemplars-per-class 2 --training-steps 500 --shots 1024 --include-reset-control --output-dir results/recurrent-comparison
+```bash
+python -m qcenn_qml.recurrent_mnist --dataset mnist --seeds 42 --side 4 \
+  --encoding angle --rounds 2 --damping 0 --shots 1024 --output-dir results/mnist-angle
+```
 
-The model streams 2x2 image patches through four memory qubits, local shared
-RY/RZ/RXX/RZZ gates and one reset/reused environment qubit. Nineteen quantum
-gate parameters are trained with classical SPSA-Adam on a reduced-density
-simulator. Final test predictions use finite-shot circuit measurements only;
-there is no trained classical prediction head. Basis outcomes 10..15 are
-rejected and the accepted-shot fraction is reported.
+Use `--encoding amplitude` with the same side for a comparison. Other controls
+are `--rounds 1`, `2`, `4` and `--damping 0`, `0.05`. Choose configurations
+using training/validation, never test scores. Use a fresh output directory;
+the default raw memory limit is 32 records. Details: [QUANTUM_CORE.md](docs/QUANTUM_CORE.md).
 
-Comparators include measured quantum exemplar fidelity and Grover scoring,
-exact classical versions, normalized classical centroids, and an optional
-independently trained memory-reset control. Reports preserve split IDs and
-data hashes, source/package versions, model parameters, raw counts, Wilson and
-paired-bootstrap intervals, training traces and full native resource totals.
-Quantum overlap methods have more circuits/shots than the recurrent model;
-costs are reported rather than claiming equal resources or quantum advantage.
-Always use a fresh output directory. Original MNIST downloads use checksummed
-IDX archives; PyTorch is not required. Full details and model reloading are in
-[the recurrent experiment protocol](docs/RECURRENT_MNIST.md).
-The [archived two-seed original-MNIST smoke](evidence/recurrent-mnist-smoke/README.md)
-records the initial recurrent model's weak accuracy alongside every comparator;
-it establishes execution and reproducibility, with no accuracy improvement.
+The original per-exemplar reference remains available, explicitly using k=0:
 
-## Two Python commands for genuine MNIST
+```bash
+python -m qcenn_qml.mnist --dataset mnist --classes 01 --train-per-class 2 --test-per-class 5 --shots 1024 --iterations 0 --output-dir results/mnist-binary
+python -m qcenn_qml.mnist --dataset mnist --classes 0123456789 --train-per-class 2 --test-per-class 5 --shots 1024 --iterations 0 --output-dir results/mnist-ten
+```
 
-Binary 0 versus 1, quantum-fidelity baseline:
+## Matched quantum denoising
 
-    python -m qcenn_qml.mnist --dataset mnist --classes 01 --train-per-class 2 --test-per-class 5 --shots 1024 --iterations 0 --output-dir results/mnist-binary
+```bash
+python -m qcenn_qml.diffusion.benchmark --corpus-kind text --shots 1024 \
+  --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --readout-error 0.05 \
+  --output-dir results/diffusion-matched
+```
 
-Ten classes, coherent Grover polynomial response (may perform worse than baseline):
+Raw corpus records enter QROM; no fitted CPU conditional table compiles the
+quantum probabilities. A direct classical conditional-table baseline is a
+separate reference. Noiseless/noisy runs use the identical native circuits
+and cases. The target stays quantum across replacements. Invalid readout
+codes keep their error mass, and unseen contexts abstain.
 
-    python -m qcenn_qml.mnist --dataset mnist --classes 0123456789 --train-per-class 2 --test-per-class 5 --shots 1024 --iterations 1 --output-dir results/mnist-ten
+The default small English corpus splits whole sentences before windowing;
+`--corpus-file` accepts local text within the declared 256-record/64-token
+budget. `--corpus-kind toy` retains the earlier three-token sanity check.
+This is a nonparametric memory experiment, not a trained diffusion LLM.
 
-The original MNIST dataset is downloaded automatically as checksummed 28x28 IDX images; it is resized to 8x8, normalized, and amplitude-loaded into six quantum data qubits. A per-exemplar quantum fidelity circuit uses U_exemplar inverse times U_image, and the result is estimated through finite-shot zero-state measurements in Qiskit Aer. The optional coherent Grover recurrence is a polynomial in overlap probability, but **nonmonotonic**; the same samples/shots should be evaluated with iterations 0 and 1 for any research comparison. This baseline has no neural weights; class prototypes are stored classically and class choice uses a classical argmax. Dense state preparation has real cost. Very small samples in these commands are smoke experiments, not publication-quality scores.
+## Coherent text memory
 
-Offline CI alternative (NOT genuine MNIST; clearly identified in output):
+```bash
+python -m qcenn_qml.smol135 --prompt 'the cat' --new-tokens 3 --shots 1024 --output-dir results/quantum-text
+```
 
-    python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128
+Later queries depend on earlier quantum token registers. All generated tokens
+are measured at the end; there is no teacher, CPU transition table or
+intermediate classical token update. Complete-sequence postselection can
+reweight earlier outputs, and is reported. This is not SmolLM2-135M.
 
-## SmolLM2-135M quantum research path
+## Quantum attention and full-Smol audit
 
-The actual [SmolLM2-135M](https://huggingface.co/HuggingFaceTB/SmolLM2-135M) **is not transferred to or executed on quantum hardware**. It is a 135M-parameter transformer, and directly implementing its layers/weights has not been achieved here. This is a small quantum autoregressive **associative n-gram memory** with maximum eight-token vocabulary and one- or two-token context, not a trained quantum LLM. Memory amplitudes encode (context, next token) counts; a Qiskit circuit prepares the joint state, optionally amplifies a query context coherently, and measures the output token. It does not perform a prediction-time classical n-gram lookup. Dense classical amplitude construction is required; after each measured token, the next circuit is compiled classically.
+```bash
+python -m qcenn_qml.quantum_attention --shots 8192 --output-dir results/attention
+python -m qcenn_qml.smol_feasibility --attention-report results/attention/report.json --output-dir results/smol-audit
+```
 
-Runnable quantum memory with built-in toy text:
+Reversible gates compute signed ternary dot products and postselected softmax
+sampling. Values are loaded quantum mechanically and measured to estimate
+weighted means. No CPU attention score/softmax drives the prediction. The
+component is not a full-precision coherent transformer block.
 
-    python -m qcenn_qml.smol135 --prompt 'the cat' --new-tokens 5 --shots 4096 --output-dir results/smol135-toy
+The audit uses the [actual Smol configuration](https://huggingface.co/HuggingFaceTB/SmolLM2-135M/raw/main/config.json),
+lists missing operators and input/readout costs, and reports
+**NOT_IMPLEMENTED_NOT_DEMONSTRATED** for full pretrained model conversion.
+See [scope and accounting](docs/QUANTUM_CORE.md).
 
-Optional **classical teacher corpus only**, executed separately to create training text from real SmolLM2-135M; no teacher weights are converted into quantum gates:
+## Run everything in the background and zip results
 
-    python -m pip install -e '.[teacher]'
-    python -m qcenn_qml.smol135 --prompt 'The cat' --teacher-samples 4 --teacher-max-new-tokens 48 --new-tokens 5 --shots 4096 --output-dir results/smol135-teacher
+```bash
+nohup bash scripts/run_quantum_corrections.sh > quantum-corrections.log 2>&1 < /dev/null &
+```
 
-Alternatively use --corpus-file to supply any text file. Report JSON truthfully distinguishes toy, corpus-file, and classical-teacher modes. Training a quantum model by classical parameter optimization would constitute hybrid training and is not claimed here.
+The script uses `.venv-qcenn/bin/python`, creates a fresh timestamped directory,
+and runs Linux `zip` after successful completion. Override `QCENN_PYTHON` to
+choose another interpreter. Monitor `tail -f quantum-corrections.log`.
 
-## Tests and status
+## Validation and historical references
 
-    python -m pytest -q
+```bash
+python -m pytest -q
+```
 
-CI runs NumPy invariants, independent ideal statevector assertions, complete recurrent circuit/density cross-checks, memory/CPTP tests, seeded training/split reproducibility, and explicitly labeled **digits-proxy** and toy-language Aer smokes. All actual circuits run on **Qiskit Aer (classical simulation of quantum gates)**; no physical QPU test, runtime speedup, or SmolLM2 emulation is claimed. Reports are saved under the chosen output directory as report.json. Accuracy improvement must be established by the comparisons, not assumed from successful execution.
+Tests independently check quantum memories, reversible signed arithmetic,
+softmax distributions, retained recurrence versus refreshed memory, truth-free
+fully masked gates, coherent generation, paired noise, data splits and fit-gate
+failure handling. CI uses clearly identified digits-proxy and small text cases.
+All execution here is **Qiskit Aer simulation**, with no physical QPU or quantum
+advantage claim. Larger scientific comparisons remain necessary.
 
-## Attribution and citation
+The older experiments remain reproducible only through explicit flags:
+`recurrent_mnist --legacy-hybrid`, `smol135 --legacy-classical-memory`, and
+`diffusion.benchmark --legacy-count-table`. Classical teacher text generation
+requires the text legacy flag and the optional `teacher` dependencies.
+See the [v0.2 recurrent protocol](docs/RECURRENT_MNIST.md),
+[legacy diffusion protocol](docs/QUANTUM_DIFFUSION.md), and
+[archived original-MNIST results](evidence/recurrent-mnist-smoke/README.md).
+Negative historical results are preserved.
 
-**QCeNN-QML software citation:** V. Tavakkoli, "QCeNN-QML: Quantum-Circuit Inference Prototypes for MNIST and Quantum Language Experiments," software, 2026, https://github.com/vtavakkoli/QCeNN-QML. Cite the software in all public research and results materially using it.
+## Attribution
 
-**Upstream research inspiration:** QCeNN-MI — Vahid Tavakkoli and Kabeh Mohsenzadegan (2026), https://github.com/vtavakkoli/QCeNN-MI. Its separate custom license has its own mandatory attribution and citation conditions. This repository does **not** relicense upstream code or third-party dependencies. See [NOTICE.md](NOTICE.md).
+QCeNN-QML — Vahid Tavakkoli (2026), https://github.com/vtavakkoli/QCeNN-QML.
+Cite the software in all public research and results materially using it.
 
-
-## Quantum masked diffusion and engineered noise (research prototype)
-
-Third independent track: a **three-token conditional masked-denoising circuit**
-using 9 qubits (six data/context, two environment, one flag).
-A mask-replacement forward channel and recurrent conditional replacement
-channels are executed with quantum-controlled swaps and environment resets.
-Quantum context-controlled token amplitudes come from a **classically counted
-tiny toy corpus**, not from learned quantum neural-network weights. The
-data register is not measured and classically reconstructed between updates.
-This is **not a trained diffusion LLM**, not an implementation of the exact
-QCeNN-MI inversion solver, and not a demonstration of benefit from
-uncontrolled physical-device noise.
-
-    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --output-dir results/diffusion/ideal
-    python -m qcenn_qml.diffusion.benchmark --shots 1024 --examples 8 --beta 1 --eta 0.65 --steps 0 1 3 --readout-error 0.05 --output-dir results/diffusion/noisy
-
-Each run saves report.json and report.md with measured conditional token
-frequencies, independent channel-theory checks, shots, and compiled depths.
-Separate measured experiments can be merged using:
-
-    python -m qcenn_qml.report --output-dir results/ci/summary
-
-See [the detailed quantum-noise research protocol](docs/QUANTUM_DIFFUSION.md).
-CI uploads an artifact named qcenn-qml-all-simulator-results with all
-three smoke experiment reports and the combined summary.
+QCeNN-MI research inspiration — Vahid Tavakkoli and Kabeh Mohsenzadegan (2026),
+https://github.com/vtavakkoli/QCeNN-MI. Its separate license/citation obligations
+and all third-party rights remain. No upstream source or pretrained weights
+have been copied or relicensed by these new modules.

@@ -118,6 +118,12 @@ def execute(*, shots=256, beta=1.0, eta=0.65, steps=(0,1,3),
 
 
 def main(argv=None):
+    import sys
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if '--legacy-count-table' not in argv:
+        from .matched import main as matched_main
+        return matched_main(argv)
+    argv.remove('--legacy-count-table')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shots",type=int,default=256)
     parser.add_argument("--beta",type=float,default=1.0)
