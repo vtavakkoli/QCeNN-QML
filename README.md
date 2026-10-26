@@ -148,6 +148,13 @@ the overall log every 30 seconds. Every job logs `START` and `END`; the runner
 prints a final **`FINISHED state=... exit=...`** line. A log file existing is
 not proof that the job has finished.
 
+MNIST log lines name the active split, including k=0 and reset controls. Aer
+prints compilation/sampling phases and a waiting heartbeat every 30 seconds;
+the heartbeat is not a percentage-complete estimate. Every measured MNIST
+batch and completed split is checkpointed before later controls start. Text
+also writes a phase file and saves raw counts once execution returns. The
+attention audit starts as soon as attention is ready and a worker is free.
+
 | Final state | Exit | Meaning |
 |---|---:|---|
 | `DONE` | 0 | All requested stages and archives succeeded. |
@@ -165,8 +172,9 @@ The final state reports execution success, not quantum advantage or full Smol
 implementation. The Smol audit still reports missing transformer components.
 
 The default CPU budget respects available affinity and container quota, with
-up to six independent workers. It divides that budget across Aer MPS thread
-pools and disables nested BLAS/transpilation pools. For example, use four
+up to six independent workers. Each worker parallelizes independent circuits
+when available, or uses one MPS thread pool; nested BLAS/transpilation pools
+stay disabled. For example, use four
 workers within a 32-core allocation:
 
 ```bash
@@ -190,6 +198,33 @@ bash scripts/run_quantum_corrections.sh --smoke
 Smoke mode explicitly uses the digits proxy and tiny corpora. Its output is
 labeled `smoke`; it is not real-MNIST evidence. Fit failures still produce
 `DONE_WITH_BLOCKED_TESTS` and exit 2 rather than silently claiming test success.
+
+To rerun just MNIST while keeping finished diffusion/attention experiments:
+
+```bash
+bash scripts/run_quantum_corrections.sh --mnist-only
+```
+
+If an old run is still active, leave its source checkout intact. Use a detached
+worktree for the fix so the old process's eventual source provenance remains
+valid. From the original repository root:
+
+```bash
+git fetch origin
+git worktree add --detach ../QCeNN-QML-fixed origin/main
+QCENN_PYTHON="$PWD/.venv-qcenn/bin/python" \
+PYTHONPATH="$PWD/../QCeNN-QML-fixed/src" \
+QCENN_DATA_ROOT="$PWD/data" QCENN_CPUS=2 QCENN_JOBS=2 \
+nohup bash -c 'exec bash ../QCeNN-QML-fixed/scripts/run_quantum_corrections.sh --mnist-only' \
+  > results/mnist-fixed.log 2>&1 < /dev/null &
+```
+
+Inspect that separate batch with
+`bash ../QCeNN-QML-fixed/scripts/run_quantum_corrections.sh --status`. Its
+results and ZIPs live in the fixed worktree. Running processes keep the code
+they already imported; fetching an update does not accelerate an existing job.
+The new batch reruns MNIST rather than claiming to recover old unsaved counts.
+Confirm the full command of any older process before deciding to stop it.
 
 ## Validation and historical references
 

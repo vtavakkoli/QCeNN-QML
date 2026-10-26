@@ -29,7 +29,7 @@ started=time.time()
 trace={'start':started,'pid':os.getpid(),'threads':int(os.environ['QCENN_THREADS']),'argv':args}
 (out/'trace.json').write_text(json.dumps(trace))
 print('running '+out.name,flush=True)
-time.sleep(float(os.environ.get('QCENN_TEST_SLEEP','.25')))
+time.sleep(4 if os.environ.get('QCENN_TEST_SLOW')==out.name else float(os.environ.get('QCENN_TEST_SLEEP','.25')))
 if os.environ.get('QCENN_TEST_FAIL')==out.name:
  (out/'partial.txt').write_text('partial output')
  sys.exit(9)
@@ -96,6 +96,24 @@ def test_blocked_fit_gate_is_not_reported_as_success(tmp_path,fake_python):
     with zipfile.ZipFile(output/'archives/mnist-42.zip') as z:
         assert z.read('status/mnist-42.tsv').startswith(b'GATE_FAILED\t2')
     assert (output/'archives/diffusion.zip').exists()
+
+
+def test_attention_audit_does_not_wait_for_slow_text(tmp_path,fake_python):
+    output,process=run(tmp_path,fake_python,QCENN_TEST_SLOW='text')
+    assert process.returncode==0,process.stdout+process.stderr
+    audit=json.loads((output/'experiments/smol-audit/trace.json').read_text())
+    text=json.loads((output/'experiments/text/trace.json').read_text())
+    assert audit['start']<text['end']
+
+
+def test_mnist_only_does_not_repeat_completed_other_experiments(tmp_path,fake_python):
+    output=tmp_path/'mnist-only'
+    result=subprocess.run(['bash',str(RUNNER),'--smoke','--mnist-only',str(output)],
+        env=environment(fake_python),capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stdout+result.stderr
+    assert {p.name for p in (output/'archives').glob('*.zip')}=={
+        'mnist-42.zip','mnist-43.zip','mnist-44.zip','summary.zip'}
+    assert not (output/'experiments/diffusion').exists()
 
 
 def test_failed_job_keeps_partial_output_and_other_experiments(tmp_path,fake_python):

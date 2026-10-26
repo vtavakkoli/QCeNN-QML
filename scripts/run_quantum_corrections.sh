@@ -6,12 +6,13 @@ qcenn_latest_file=${QCENN_LATEST_FILE:-results/quantum-corrections-latest.txt}
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/run_quantum_corrections.sh [--smoke] [OUTPUT_DIRECTORY]
+Usage: bash scripts/run_quantum_corrections.sh [--smoke] [--mnist-only] [OUTPUT_DIRECTORY]
        bash scripts/run_quantum_corrections.sh --status [OUTPUT_DIRECTORY]
 
 Full: original MNIST seeds 42/43/44, matched text diffusion, attention,
 coherent text memory and Smol audit. Independent jobs run concurrently.
 Smoke: explicit digits proxy and tiny corpora; not scientific benchmark data.
+--mnist-only: rerun only the three MNIST seeds and their combined summary.
 Each experiment gets a log, status, command and separate ZIP with checksum.
 
 Environment: QCENN_PYTHON (default .venv-qcenn/bin/python), QCENN_JOBS (workers),
@@ -33,8 +34,11 @@ if [[ ${1:-} == --status ]]; then
   fi
   exit 0
 fi
-qcenn_mode=full
-if [[ ${1:-} == --smoke ]]; then qcenn_mode=smoke; shift; fi
+qcenn_mode=full; qcenn_mnist_only=0
+while [[ ${1:-} == --smoke || ${1:-} == --mnist-only ]]; do
+  if [[ $1 == --smoke ]]; then qcenn_mode=smoke; else qcenn_mnist_only=1; fi
+  shift
+done
 if (( $# > 1 )) || [[ ${1:-} == --* ]]; then usage >&2; exit 1; fi
 qcenn_python=${QCENN_PYTHON:-.venv-qcenn/bin/python}
 command -v "$qcenn_python" >/dev/null || { printf 'Python missing: %s\n' "$qcenn_python" >&2; exit 1; }
@@ -53,10 +57,11 @@ if [[ $qcenn_quota != max ]] && (( qcenn_quota > 0 )); then
 fi
 qcenn_cpus=${QCENN_CPUS:-$qcenn_detected}
 [[ $qcenn_cpus =~ ^[1-9][0-9]*$ ]] || { printf 'QCENN_CPUS must be positive.\n' >&2; exit 1; }
-qcenn_workers=${QCENN_JOBS:-$((qcenn_cpus < 6 ? qcenn_cpus : 6))}
+qcenn_independent=$((qcenn_mnist_only ? 3 : 6))
+qcenn_workers=${QCENN_JOBS:-$((qcenn_cpus < qcenn_independent ? qcenn_cpus : qcenn_independent))}
 [[ $qcenn_workers =~ ^[1-9][0-9]*$ ]] || { printf 'QCENN_JOBS must be positive.\n' >&2; exit 1; }
-if (( qcenn_workers > qcenn_cpus || qcenn_workers > 6 )); then
-  printf 'QCENN_JOBS must not exceed QCENN_CPUS or the six independent jobs.\n' >&2; exit 1
+if (( qcenn_workers > qcenn_cpus || qcenn_workers > qcenn_independent )); then
+  printf 'QCENN_JOBS must not exceed QCENN_CPUS or the selected independent job count (%s).\n' "$qcenn_independent" >&2; exit 1
 fi
 qcenn_output=${1:-results/quantum-corrections-$(date +%Y%m%d-%H%M%S)-$$}
 mkdir -p -- "$(dirname -- "$qcenn_output")"
@@ -66,7 +71,9 @@ mkdir -p "$qcenn_output"/{experiments,logs,status,commands,archives} results
 printf '%s\n' "$$" > "$qcenn_output/runner.pid"
 qcenn_started=$(date +%s)
 qcenn_finalized=0; qcenn_state=RUNNING; qcenn_last_heartbeat=0; qcenn_last_snapshot=0
+qcenn_audit_started=$qcenn_mnist_only
 qcenn_names=(mnist-42 mnist-43 mnist-44 diffusion attention text smol-audit summary)
+if ((qcenn_mnist_only)); then qcenn_names=(mnist-42 mnist-43 mnist-44 summary); fi
 declare -A qcenn_pids=()
 
 event() { printf '[%s] %s\n' "$(date -Iseconds)" "$*" | tee -a "$qcenn_output/events.log"; }
@@ -154,6 +161,22 @@ reap_workers() {
       unset 'qcenn_pids[$slot]'
     fi
   done
+  # The audit needs only attention, not the long MNIST/text simulations.
+  if ((qcenn_audit_started == 0)); then
+    local attention_state ignored
+    read -r attention_state ignored < "$qcenn_output/status/attention.tsv"
+    if [[ $attention_state == DONE ]] && ((${#qcenn_pids[@]} < qcenn_workers)); then
+      qcenn_audit_started=1
+      launch smol-audit "$qcenn_python" -u -m qcenn_qml.smol_feasibility \
+        --attention-report "$qcenn_output/experiments/attention/report.json" --output-dir "$qcenn_output/experiments/smol-audit"
+    elif [[ $attention_state == FAILED || $attention_state == ARCHIVE_FAILED || $attention_state == INTERRUPTED ]]; then
+      qcenn_audit_started=1
+      mkdir -p "$qcenn_output/experiments/smol-audit"
+      printf 'SKIPPED: attention did not succeed.\n' > "$qcenn_output/logs/smol-audit.log"
+      job_state smol-audit SKIPPED 1 0 "$(date +%s)" 0
+      archive_job smol-audit
+    fi
+  fi
   now=$(date +%s)
   if ((now-qcenn_last_snapshot >= 5)); then snapshot; fi
   if ((now-qcenn_last_heartbeat >= 30)); then
@@ -197,6 +220,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 printf 'mode=%s\ncpu_budget=%s\nworkers=%s\npython=%s\nbackend=CPU matrix_product_state\n' \
   "$qcenn_mode" "$qcenn_cpus" "$qcenn_workers" "$qcenn_python" > "$qcenn_output/runtime.txt"
+printf 'mnist_only=%s\n' "$qcenn_mnist_only" >> "$qcenn_output/runtime.txt"
 snapshot
 mkdir -p -- "$(dirname -- "$qcenn_latest_file")"
 printf '%s\n' "$qcenn_output" > "$qcenn_latest_file.$BASHPID.tmp"
@@ -205,6 +229,7 @@ event "RUN STARTED mode=$qcenn_mode cpus=$qcenn_cpus workers=$qcenn_workers outp
 qcenn_dataset=mnist; qcenn_side=8; qcenn_shots=1024
 qcenn_diffusion_shots=1024; qcenn_examples=8; qcenn_corpus=text
 qcenn_attention_shots=8192; qcenn_tokens=3; qcenn_text_extra=()
+qcenn_data_root=${QCENN_DATA_ROOT:-data}
 if [[ $qcenn_mode == smoke ]]; then
   qcenn_dataset=digits-proxy; qcenn_side=4; qcenn_shots=128
   qcenn_diffusion_shots=128; qcenn_examples=2; qcenn_corpus=toy
@@ -213,7 +238,7 @@ if [[ $qcenn_mode == smoke ]]; then
   event 'SMOKE ONLY: digits proxy and tiny corpora, not original-MNIST evidence.'
 else
   event "PREPARING MNIST cache once before parallel readers; log=$qcenn_output/logs/data-prepare.log"
-  "$qcenn_python" -u -c 'from qcenn_qml.mnist_data import load_dataset; load_dataset("mnist"); print("MNIST cache ready", flush=True)' \
+  QCENN_DATA_ROOT="$qcenn_data_root" "$qcenn_python" -u -c 'import os; from qcenn_qml.mnist_data import load_dataset; load_dataset("mnist",os.environ["QCENN_DATA_ROOT"]); print("MNIST cache ready", flush=True)' \
     > "$qcenn_output/logs/data-prepare.log" 2>&1 &
   qcenn_pids[0]=$!
   if wait "${qcenn_pids[0]}"; then unset 'qcenn_pids[0]'
@@ -224,8 +249,10 @@ for qcenn_seed in 42 43 44; do
     --dataset "$qcenn_dataset" --seeds "$qcenn_seed" --side "$qcenn_side" \
     --train-per-class 1 --validation-per-class 1 --test-per-class 1 --rounds 4 \
     --shots "$qcenn_shots" --include-reset-control --no-download --fail-on-fit-gate \
+    --data-root "$qcenn_data_root" \
     --output-dir "$qcenn_output/experiments/mnist-$qcenn_seed"
 done
+if ((qcenn_mnist_only == 0)); then
 launch diffusion "$qcenn_python" -u -m qcenn_qml.diffusion.benchmark \
   --corpus-kind "$qcenn_corpus" --steps 0 1 3 --examples "$qcenn_examples" \
   --shots "$qcenn_diffusion_shots" --readout-error 0.05 --output-dir "$qcenn_output/experiments/diffusion"
@@ -233,19 +260,9 @@ launch attention "$qcenn_python" -u -m qcenn_qml.quantum_attention \
   --shots "$qcenn_attention_shots" --output-dir "$qcenn_output/experiments/attention"
 launch text "$qcenn_python" -u -m qcenn_qml.smol135 --prompt 'the cat' \
   --new-tokens "$qcenn_tokens" --shots "$qcenn_shots" "${qcenn_text_extra[@]}" --output-dir "$qcenn_output/experiments/text"
-wait_workers
-# Audit depends on attention; the combined report waits for all experiments.
-read -r qcenn_attention_state _ < "$qcenn_output/status/attention.tsv"
-if [[ $qcenn_attention_state == DONE ]]; then
-  launch smol-audit "$qcenn_python" -u -m qcenn_qml.smol_feasibility \
-    --attention-report "$qcenn_output/experiments/attention/report.json" --output-dir "$qcenn_output/experiments/smol-audit"
-  wait_workers
-else
-  mkdir -p "$qcenn_output/experiments/smol-audit"
-  printf 'SKIPPED: attention did not succeed.\n' > "$qcenn_output/logs/smol-audit.log"
-  job_state smol-audit SKIPPED 1 0 "$(date +%s)" 0
-  archive_job smol-audit
 fi
+wait_workers
+# The combined report requires all experiment outputs.
 launch summary "$qcenn_python" -u -m qcenn_qml.report \
   --mnist "$qcenn_output/experiments/legacy-mnist-not-run.json" \
   --recurrent "$qcenn_output/experiments/mnist-42/report.json" \

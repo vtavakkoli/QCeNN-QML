@@ -43,6 +43,24 @@ environment. Conditional output matches one update, but acceptance is a^r
 instead of mean(p_i^r), and the extra qubits/gates are counted. No CPU state
 update or classical prediction fallback is used.
 
+The independent reset-register blocks are partitioned **before** native gate
+synthesis, preventing MCX decomposition from borrowing dirty work qubits across
+unrelated blocks. Aer samples each independent component with its own seeded
+shot stream; their actual final shot strings form the joint tensor-product
+readout. No analytic probability or classical score supplies a prediction.
+The returned QPY circuit retains final-only measurements, all logical qubits
+and all compiled gates. Resource JSON additionally records simulated component
+widths and component shots; this is a numerical simulation optimization, not
+a physical QPU speedup. Retained-index recurrence and connected text circuits
+are not factorized by this optimization.
+
+Measured MNIST batches are atomically saved as `batch-*.json` with raw counts,
+truth labels and costs. Every completed split has `result.json`; the root
+`report.partial.json` preserves completed split metrics while another stage is
+running. A final `report.json` replaces the partial marker only on completion.
+Source provenance is captured at startup. Old runs without these checkpoints
+cannot recover their in-memory counts merely by installing this update.
+
 For validation experiments, add `--validation-only` and vary one fixed
 configuration at a time. This mode never evaluates test, even after a passed
 retrieval gate:
