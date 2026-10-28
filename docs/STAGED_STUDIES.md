@@ -12,6 +12,52 @@ The entire host program is not purely quantum. MNIST/diffusion are raw-record
 memories; the block has fixed demonstration weights. Neural-weight training,
 pretrained Smol execution, physical QPU execution and advantage are not claimed.
 
+## Inspect the execution machine first
+
+Run the standalone diagnostic **inside the same machine/job allocation** that
+will execute the studies:
+
+```bash
+bash scripts/check_qcenn_system.sh --benchmark
+```
+
+It writes `results/system-check-<timestamp>-<pid>/report.txt`, a detailed JSON,
+`recommended.env`, and `commands.txt`, plus a native ZIP/checksum when `zip` is
+installed. Share the ZIP for hardware-specific tuning. The collector needs only
+Python >=3.10; it prefers `.venv-qcenn/bin/python`. Override with `--python PATH`
+or `QCENN_PYTHON`. It installs nothing, downloads no dataset and leaves existing
+experiments running. Without `--benchmark`, only inspection and tiny Aer
+capability checks run. Optional commands have timeouts.
+
+The report distinguishes host CPUs from process affinity, nested cgroup v1/v2
+quotas and scheduler limits, and reports memory headroom, NUMA, disk space,
+GPU visibility, installed packages and recent CPU/RSS usage of QCeNN jobs.
+`--cpu-budget N` can reduce the allocation budget. Worker estimates reserve
+20% of visible available memory and assume at least 4 GiB per worker (or 1.25
+times the largest observed QCeNN RSS). Override that **estimate** with
+`--memory-per-worker-gib N`; it does not guarantee future MPS memory use.
+
+`--benchmark` uses synthetic ten-record amplitude-memory and sixteen-record
+denoising circuits, 64 actual measured shots per circuit, and two repeats of
+worker/thread combinations. Compilation/import/warm-up are outside timing.
+It skips the sweep while QCeNN processes exist. These short timings help choose
+concurrency; they are not neural training, MNIST accuracy, a larger-circuit
+memory guarantee or an end-to-end speedup claim.
+
+The current model backend is CPU MPS. Aer documents MPS as CPU-only; detecting
+an NVIDIA GPU or successfully running a GPU statevector smoke does not
+accelerate the existing studies. Other GPU methods need separate scientific
+validation, and dense statevectors cannot fit the 241-qubit toy block.
+See [Aer backend documentation](https://qiskit.github.io/qiskit-aer/stubs/qiskit_aer.AerSimulator.html).
+
+Inspect `commands.txt` before launching. Its direct study commands apply the
+tuned/estimated worker count within the full CPU budget; they do not create
+runner ZIPs. Run one command at a time in that allocation. The existing outer
+runner statically splits its resources; `QCENN_JOBS=1` gives each track the full
+budget in sequence but does not apply the diagnostic's memory-based worker cap.
+Changing CPU settings does not alter the scientific fit/stability gates or
+make an already blocked MNIST campaign pass.
+
 ## Parallel run, status and archives
 
 ```bash

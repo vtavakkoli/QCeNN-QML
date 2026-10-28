@@ -41,6 +41,17 @@ python -m pip install -e ".[mnist,test]"
 
 ## Staged studies and separate experiment ZIPs
 
+Inspect the actual execution machine/allocation before tuning parallelism:
+
+```bash
+bash scripts/check_qcenn_system.sh --benchmark
+```
+
+This creates a system-report ZIP, CPU/memory-aware worker recommendations and
+example commands. The optional measured-circuit timing sweep skips existing
+QCeNN jobs. Nothing is installed and no experiment is stopped. Current Aer MPS
+studies use CPU; detected GPUs require a separately validated backend.
+
 ```bash
 nohup bash -c 'exec bash scripts/run_research_studies.sh' \
   > research-studies.log 2>&1 < /dev/null &
