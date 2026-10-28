@@ -1,5 +1,6 @@
 """Held-out lexical leakage, paired gate identity and checkpoint recovery."""
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -84,3 +85,24 @@ def test_broader_corpus_snapshot_changes_invalidate_resume(tmp_path):
     path.write_text(path.read_text() + '\nnew changed sentence.')
     with pytest.raises(FileExistsError):
         execute_benchmark(**options, resume=True)
+
+
+def test_sharded_study_reassembles_each_case_once_and_keeps_noise_pairs(tmp_path):
+    from qcenn_qml.diffusion.study import study, DEFAULT_CORPORA
+    options = dict(corpus_files=[DEFAULT_CORPORA[0]], data_seeds=[42], measurement_seeds=[101],
+        shots=32, examples=3, max_train_records=8, max_vocabulary=8, steps=[0, 1],
+        amplify=0, jobs=2, cpu_budget=2, output_dir=tmp_path / 'study')
+    report = study(**options)
+    assert report['status'] == 'DONE' and len(report['runs']) == 1
+    run = json.loads(Path(report['runs'][0]['report']).read_text())
+    assert run['evaluation_count'] == 3
+    assert len(run['cases']) == 3 * 2 * 3  # Cases x steps x matched noise modes.
+    assert len({(r['mode'], r['steps'], r['heldout_window_index']) for r in run['cases']}) == 18
+    for mode in run['matched_results'].values():
+        for row in mode.values():
+            assert row['total_shots'] == 3 * 32 == row['resources']['total_shots']
+    unique = {r['heldout_window_index']: r for r in run['cases']}
+    assert run['classical_conditional_baseline']['correct_token_probability_mean'] == pytest.approx(
+        np.mean([r['classical_direct_target_probability'] for r in unique.values()]))
+    restored = study(**options, resume=True)
+    assert json.loads(Path(restored['runs'][0]['report']).read_text())['cases'] == run['cases']

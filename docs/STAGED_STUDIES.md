@@ -1,4 +1,4 @@
-# Staged quantum studies (v0.4)
+# Staged quantum studies (v0.5)
 
 QCeNN-QML — Vahid Tavakkoli (2026). See LICENSE and CITATION.cff.
 QCeNN-MI inspiration and separate attribution to Vahid Tavakkoli and Kabeh
@@ -11,6 +11,11 @@ selection of experimental settings and final count decoding remain classical.
 The entire host program is not purely quantum. MNIST/diffusion are raw-record
 memories; the block has fixed demonstration weights. Neural-weight training,
 pretrained Smol execution, physical QPU execution and advantage are not claimed.
+
+The v0.5 updater, faster verified final-readout sampler, shared CPU/GPU resources,
+natural-text snapshots and safe stop/resume are documented in
+[ACCELERATED_RUNS.md](ACCELERATED_RUNS.md). Older v0.4 evidence retains its source
+and protocol identity; new runs do not silently import those measurements.
 
 ## Inspect the execution machine first
 
@@ -44,33 +49,33 @@ It skips the sweep while QCeNN processes exist. These short timings help choose
 concurrency; they are not neural training, MNIST accuracy, a larger-circuit
 memory guarantee or an end-to-end speedup claim.
 
-The current model backend is CPU MPS. Aer documents MPS as CPU-only; detecting
-an NVIDIA GPU or successfully running a GPU statevector smoke does not
-accelerate the existing studies. Other GPU methods need separate scientific
-validation, and dense statevectors cannot fit the 241-qubit toy block.
+The compatibility backend is CPU MPS. The v0.5 updater can qualify separate GPU
+statevector/tensor-network workers against native-circuit references and noise;
+detecting a GPU alone does not qualify it. Dense statevectors cannot fit the
+241-qubit toy block, which retains CPU MPS under the default GPU width bounds.
 See [Aer backend documentation](https://qiskit.github.io/qiskit-aer/stubs/qiskit_aer.AerSimulator.html).
 
 Inspect `commands.txt` before launching. Its direct study commands apply the
 tuned/estimated worker count within the full CPU budget; they do not create
 runner ZIPs. Run one command at a time in that allocation. The existing outer
-runner statically splits its resources; `QCENN_JOBS=1` gives each track the full
-budget in sequence but does not apply the diagnostic's memory-based worker cap.
+legacy runner statically splits its resources. The v0.5 shared runner replaces
+that behavior; use the updater for its integrated memory/worker cap.
 Changing CPU settings does not alter the scientific fit/stability gates or
 make an already blocked MNIST campaign pass.
 
 ## Parallel run, status and archives
 
 ```bash
-QCENN_CPUS=10 QCENN_JOBS=3 \
+QCENN_CPUS=10 QCENN_JOBS=10 \
 nohup bash -c 'exec bash scripts/run_research_studies.sh' \
   > research-studies.log 2>&1 < /dev/null &
 bash scripts/run_research_studies.sh --status
 tail -f research-studies.log
 ```
 
-Omit CPU variables for affinity/cgroup-aware defaults. Three independent tracks
-share the budget without nested BLAS pools; studies parallelize independent
-configurations/data seeds inside their share. Fit-before-validation and
+Omit CPU variables for affinity/cgroup/memory-aware defaults. Independent tracks
+share one worker pool without nested Rayon/BLAS pools; studies parallelize
+image and text-window batches. Fit-before-validation and
 freeze-before-test remain sequential. Each track gets a log, command, status,
 native ZIP and checksum. The Smol audit starts when the block finishes; the
 summary waits for all selected jobs. States distinguish DONE,
@@ -87,12 +92,9 @@ Keep a running study's checkout unchanged. With an older run still active:
 ```bash
 git fetch origin
 git worktree add --detach ../QCeNN-QML-studies origin/main
-QCENN_PYTHON="$PWD/.venv-qcenn/bin/python" \
-PYTHONPATH="$PWD/../QCeNN-QML-studies/src" \
-QCENN_DATA_ROOT="$PWD/data" QCENN_CPUS=10 QCENN_JOBS=3 \
-nohup bash -c 'exec bash ../QCeNN-QML-studies/scripts/run_research_studies.sh' \
+nohup bash -c 'exec bash ../QCeNN-QML-studies/scripts/update_and_run_research.sh' \
   > results/research-studies.log 2>&1 < /dev/null &
-bash ../QCeNN-QML-studies/scripts/run_research_studies.sh --status
+bash ../QCeNN-QML-studies/scripts/update_and_run_research.sh --status
 ```
 
 ## MNIST protocol
@@ -129,9 +131,13 @@ measurement seeds. Eligibility requires >=0.95 agreement at that budget and
 the largest budget, >=0.95 modal-prediction agreement with the largest budget,
 and an accepted shot for every image/repetition. This empirical criterion is
 not a convergence proof. Curves, accuracies and counts are retained. Selection
-maximizes eligible equal-CNOT validation accuracy, then minimizes actual CX,
+maximizes eligible equal-shot validation accuracy by default, then minimizes actual CX,
 then uses deterministic configuration order. Data-seed cluster intervals are
 descriptive; small validation sets and three seeds leave selection uncertainty.
+Matched-CNOT stability and selection are reported separately; use
+`--selection-mode equal_cnot` for the former cost-matched-only policy. A stable
+sufficient-shot candidate can now proceed even when the cost-matched curve is
+unstable. The >=0.95 threshold and all fit/test isolation gates remain.
 
 One exemplar per class cannot change the exact winning class under monotone
 `p**r`. Multiple exemplars use `sum(p_i**r)` and can change class rankings;

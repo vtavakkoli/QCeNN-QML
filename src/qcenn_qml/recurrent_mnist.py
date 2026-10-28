@@ -227,7 +227,7 @@ def paired_accuracy_interval(targets, first, second, seed):
 
 def provenance():
     packages = {}
-    for package in ("numpy", "qiskit", "qiskit-aer", "Pillow", "scikit-learn"):
+    for package in ("qcenn-qml", "numpy", "scipy", "qiskit", "qiskit-aer", "qiskit-aer-gpu", "Pillow", "scikit-learn"):
         try:
             packages[package] = version(package)
         except PackageNotFoundError:
@@ -246,7 +246,10 @@ def provenance():
         dirty = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True))
     except (OSError, subprocess.CalledProcessError):
         commit, dirty = None, None
+    from . import __version__
     return {"python": platform.python_version(), "platform": platform.platform(),
+            "source_package_version": __version__,
+            "installed_metadata_matches_source": packages.get('qcenn-qml') == __version__,
             "packages": packages, "git_commit": commit, "git_dirty": dirty, "source_sha256": hashes}
 
 

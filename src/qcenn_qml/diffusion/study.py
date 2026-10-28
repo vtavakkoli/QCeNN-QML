@@ -14,7 +14,8 @@ import numpy as np
 
 from ..coherent import CORE_DISCLOSURE
 from ..recurrent_mnist import provenance, write_json
-from ..study_utils import cluster_interval, initialize, run_tasks
+from ..study_utils import cluster_interval, digest, initialize, run_tasks
+from ..resources import single_writer
 
 
 DEFAULT_CORPORA = [Path(__file__).resolve().parents[1] / 'assets' / f'diffusion-{name}.txt'
@@ -31,7 +32,17 @@ def evaluate_task(task):
         measurement_seed=task['measurement_seed'], shots=task['shots'], examples=task['examples'],
         readout_errors=task['readout_errors'], max_train_records=task['max_train_records'],
         max_vocabulary=task['max_vocabulary'], steps=task['steps'], amplify=task['amplify'],
-        output_dir=str(target), resume=(target / 'study-manifest.json').exists())
+        output_dir=str(target), resume=(target / 'study-manifest.json').exists(),
+        case_start=task.get('case_start', 0), case_stop=task.get('case_stop'),
+        batch_size=task.get('case_batch_size', 4), prepared_corpus=task.get('prepared_corpus'),
+        prepared_corpus_sha256=task.get('prepared_corpus_sha256'))
+    if 'case_start' in task:
+        path = target / 'report.json'
+        return {'report': str(path), 'report_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+    return compact_report(report, task, target / 'report.json')
+
+
+def compact_report(report, task, path):
     return {'corpus': task['corpus_name'], 'corpus_sha256': task['corpus_sha256'],
         'data_seed': task['data_seed'], 'measurement_seed': task['measurement_seed'],
         'train_count': report['train_count'], 'heldout_count': report['heldout_count'],
@@ -41,25 +52,29 @@ def evaluate_task(task):
             if key not in ('native_circuit_sha256', 'resources')} | {
                 'cx_shot_weighted_total': row['resources']['cx_shot_weighted_total']}
             for step, row in values.items()} for mode, values in report['matched_results'].items()},
-        'report': str(target / 'report.json')}
+        'report': str(path)}
 
 
+@single_writer
 def study(corpus_files=None, data_seeds=(42, 43, 44), measurement_seeds=(101, 202),
         shots=1024, examples=0, readout_errors=(.01, .05), max_train_records=128,
         max_vocabulary=32, steps=(0, 1, 3), amplify=1, jobs=1, cpu_budget=1,
-        output_dir='results/diffusion-study', resume=False, smoke=False):
+        output_dir='results/diffusion-study', resume=False, smoke=False, case_batch_size=1):
     files = [Path(path).resolve() for path in (corpus_files or DEFAULT_CORPORA)]
+    if case_batch_size < 0:
+        raise ValueError('case-batch-size must be nonnegative')
     if (not data_seeds or not measurement_seeds or len(set(data_seeds)) != len(data_seeds) or
             len(set(measurement_seeds)) != len(measurement_seeds) or
             any(s < 0 for s in (*data_seeds, *measurement_seeds))):
         raise ValueError('Nonempty independent unique nonnegative seed lists required')
     if len(set(files)) != len(files) or len({path.name for path in files}) != len(files):
         raise ValueError('Corpus files must have unique paths and filenames for separate summaries')
-    configuration = {'corpora': [{'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+    configuration = {'corpora': [{'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+        'source_metadata_sha256': hashlib.sha256(path.with_suffix('.source.json').read_bytes()).hexdigest() if path.with_suffix('.source.json').exists() else None}
         for path in files], 'data_seeds': list(data_seeds), 'measurement_seeds': list(measurement_seeds),
         'shots': shots, 'examples': examples, 'readout_errors': list(readout_errors),
         'max_train_records': max_train_records, 'max_vocabulary': max_vocabulary,
-        'steps': list(steps), 'amplify': amplify, 'smoke': smoke}
+        'steps': list(steps), 'amplify': amplify, 'smoke': smoke, 'case_batch_size': case_batch_size}
     directory = Path(output_dir).resolve()
     manifest = initialize(directory, configuration, provenance(), resume)
     snapshots = directory / 'corpora'
@@ -72,6 +87,13 @@ def study(corpus_files=None, data_seeds=(42, 43, 44), measurement_seeds=(101, 20
         identity = configuration['corpora'][index]['sha256']
         if hashlib.sha256(snapshot.read_bytes()).hexdigest() != identity:
             raise ValueError('Stored corpus snapshot changed')
+        attribution = path.with_suffix('.source.json')
+        if attribution.exists():
+            destination = snapshot.with_suffix('.source.json')
+            if not destination.exists():
+                destination.write_bytes(attribution.read_bytes())
+            if hashlib.sha256(destination.read_bytes()).hexdigest() != configuration['corpora'][index]['source_metadata_sha256']:
+                raise ValueError('Corpus attribution metadata changed')
         for seed in data_seeds:
             for measurement_seed in measurement_seeds:
                 tasks.append({'id': f'corpus-{index}-d{seed}-m{measurement_seed}',
@@ -81,8 +103,47 @@ def study(corpus_files=None, data_seeds=(42, 43, 44), measurement_seeds=(101, 20
                     'max_train_records': max_train_records, 'max_vocabulary': max_vocabulary,
                     'steps': list(steps), 'amplify': amplify})
                 tasks[-1]['source_sha256'] = manifest['source']['source_sha256']
-    rows = run_tasks('qcenn_qml.diffusion.study:evaluate_task', tasks,
-        jobs=jobs, cpu_budget=cpu_budget, directory=directory / 'tasks')
+    if case_batch_size > 0:
+        from .matched import corpus
+        from .aggregate import combine
+        shards, prepared_files = [], {}
+        for task in tasks:
+            key = (task['corpus_sha256'], task['data_seed'])
+            if key not in prepared_files:
+                vocab, mask, train, heldout, split = corpus(corpus_file=task['corpus_file'], seed=task['data_seed'],
+                    max_train_records=max_train_records, max_vocabulary=max_vocabulary)
+                cache = directory / 'prepared' / (task['id'].rsplit('-m', 1)[0] + '.json')
+                cache.parent.mkdir(exist_ok=True)
+                payload = {'vocabulary': vocab, 'mask': mask, 'training': train, 'heldout': heldout, 'split': split,
+                    'configuration': {'seed': task['data_seed'], 'max_train_records': max_train_records,
+                        'max_vocabulary': max_vocabulary, 'corpus_sha256': task['corpus_sha256']}}
+                if cache.exists():
+                    if digest(json.loads(cache.read_text())) != digest(payload):
+                        raise ValueError('Prepared corpus cache changed on resume')
+                else:
+                    write_json(cache, payload)
+                prepared_files[key] = (cache, hashlib.sha256(cache.read_bytes()).hexdigest(), len(heldout))
+            cache, checksum, total_heldout = prepared_files[key]
+            size = min(examples or total_heldout, total_heldout)
+            for step in steps:
+                for start in range(0, size, case_batch_size):
+                    shards.append({**task, 'id': task['id'] + f'-t{step}-i{start:06d}',
+                        'parent': task['id'], 'steps': [step], 'case_start': start,
+                        'case_stop': min(start + case_batch_size, size), 'case_batch_size': case_batch_size,
+                        'prepared_corpus': str(cache), 'prepared_corpus_sha256': checksum})
+        parts = run_tasks('qcenn_qml.diffusion.study:evaluate_task', shards,
+            jobs=jobs, cpu_budget=cpu_budget, directory=directory / 'tasks')
+        grouped_parts = defaultdict(list)
+        for shard, part in zip(shards, parts, strict=True):
+            grouped_parts[shard['parent']].append(part)
+        rows = []
+        for task in tasks:
+            target = directory / 'runs' / task['id']
+            report = combine(grouped_parts[task['id']], target)
+            rows.append(compact_report(report, task, target / 'report.json'))
+    else:
+        rows = run_tasks('qcenn_qml.diffusion.study:evaluate_task', tasks,
+            jobs=jobs, cpu_budget=cpu_budget, directory=directory / 'tasks')
     grouped = defaultdict(list)
     for row in rows:
         for mode, values in row['matched_results'].items():
@@ -133,6 +194,7 @@ def main(argv=None):
     parser.add_argument('--steps', type=int, nargs='+', default=[0, 1, 3])
     parser.add_argument('--amplify', type=int, default=1)
     parser.add_argument('--jobs', type=int, default=1)
+    parser.add_argument('--case-batch-size', type=int, default=1, help='Independent held-out windows per worker; 0 retains whole-run tasks')
     parser.add_argument('--cpu-budget', type=int, default=1)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--smoke', action='store_true')

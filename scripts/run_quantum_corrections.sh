@@ -141,6 +141,7 @@ run_job() {
   shift 2
   export QCENN_THREADS=$threads OMP_NUM_THREADS=$threads
   export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+  export RAYON_NUM_THREADS=1 OMP_MAX_ACTIVE_LEVELS=1
   export QISKIT_PARALLEL=FALSE QISKIT_NUM_PROCS=1
   began=$(date +%s)
   mkdir -p -- "$qcenn_output/experiments/$name"

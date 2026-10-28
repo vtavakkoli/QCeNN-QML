@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qcenn-qml"
-version = "0.4.0"
-description = "Staged quantum memory studies, matched denoising, and a coherent fixed-point transformer block"
+version = "0.5.0"
+description = "Resource-shared measured quantum studies with bounded execution and verified archives"
 license = "LicenseRef-QCeNN-QML-NC-Commercial"
 license-files = ["LICENSE", "NOTICE.md"]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26,<3", "qiskit>=1.2,<3", "qiskit-aer>=0.15,<1", "pillow>=10"]
 
 [project.optional-dependencies]
+accelerated = ["qiskit==2.6.1", "qiskit-aer==0.18.2"]
 mnist = []
 teacher = ["transformers>=4.45,<6", "torch>=2.2", "safetensors>=0.4"]
 test = ["pytest>=8", "scikit-learn>=1.4"]
