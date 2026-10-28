@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .venv-qcenn/
+.venv*/
 /quantum-corrections.log
 /diffusion-run.log
 .pytest_cache/

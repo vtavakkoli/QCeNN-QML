@@ -14,10 +14,12 @@ import subprocess
 import sys
 import time
 import traceback
+import threading
 
 import numpy as np
 
 from .recurrent_mnist import write_json
+from .resources import ResourcePool, acquire_files, detect_resources, inherited_run_descriptors, thread_environment, tree_cpu_seconds
 
 
 def digest(value):
@@ -44,13 +46,7 @@ def circuit_digest(circuit):
 
 
 def cpu_limit():
-    count = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
-    path = Path('/sys/fs/cgroup/cpu.max')
-    if path.exists():
-        quota, period = path.read_text().split()
-        if quota != 'max':
-            count = min(count, max(1, (int(quota) + int(period) - 1) // int(period)))
-    return count
+    return detect_resources()['cpu_budget']
 
 
 def cluster_interval(values, groups, seed=42, repeats=1000):
@@ -69,10 +65,22 @@ def cluster_interval(values, groups, seed=42, repeats=1000):
     return np.quantile(means, [.025, .975]).tolist()
 
 
+def execution_policy():
+    gpu = os.environ.get('QCENN_GPU_PROFILE')
+    return {'mps_readout': os.environ.get('QCENN_MPS_READOUT', 'auto'),
+        'gpu': json.loads(Path(gpu).read_text()) if gpu else None,
+        'gpu_min_qubits': int(os.environ.get('QCENN_GPU_MIN_QUBITS', '20')),
+        'gpu_max_statevector_qubits': int(os.environ.get('QCENN_GPU_MAX_STATEVECTOR_QUBITS', '30')),
+        'gpu_max_tensor_qubits': int(os.environ.get('QCENN_GPU_MAX_TENSOR_QUBITS', '128')),
+        'gpu_fraction': float(os.environ.get('QCENN_GPU_FRACTION', '.025')),
+        'force_cpu': os.environ.get('QCENN_FORCE_CPU') == '1',
+        'gpu_dispatch': 'hash_native_circuit_and_measurement_seed; wait for verified GPU slot'}
+
+
 def initialize(directory, configuration, source, resume=False):
     directory = Path(directory)
     manifest = {'configuration': configuration, 'source_sha256': source['source_sha256'],
-        'runtime_packages': source.get('packages', {})}
+        'runtime_packages': source.get('packages', {}), 'execution_policy': execution_policy()}
     signature = digest(manifest)
     path = directory / 'study-manifest.json'
     if path.exists():
@@ -90,7 +98,8 @@ def initialize(directory, configuration, source, resume=False):
     return result
 
 
-def run_tasks(worker, tasks, *, jobs, cpu_budget, directory):
+def run_tasks(worker, tasks, *, jobs, cpu_budget, directory,
+              task_timeout=None, idle_timeout=None, retries=None):
     """Run module:function workers in isolated processes, with resumable outputs.
 
     A task is {id, ...payload}. A worker writes result.json before returning.
@@ -130,63 +139,160 @@ def run_tasks(worker, tasks, *, jobs, cpu_budget, directory):
     failed = []
     last_update = 0.
     last_heartbeat = 0.
-    threads = max(1, cpu_budget // jobs)
-    environment = {**os.environ, 'QCENN_THREADS': str(threads), 'OMP_NUM_THREADS': str(threads),
-        'OPENBLAS_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1', 'NUMEXPR_NUM_THREADS': '1',
-        'QISKIT_PARALLEL': 'FALSE', 'QISKIT_NUM_PROCS': '1'}
+    pooled = os.environ.get('QCENN_RESOURCE_POOL')
+    pool = ResourcePool(pooled, int(os.environ['QCENN_POOL_CPUS'])) if pooled else None
+    # A global pool uses many one-thread workers, not fixed per-track shares.
+    threads = 1 if pool else max(1, cpu_budget // jobs)
+    environment = {**os.environ, **thread_environment(threads)}
+    task_timeout = float(task_timeout if task_timeout is not None else os.environ.get('QCENN_TASK_TIMEOUT_SECONDS', '21600'))
+    idle_timeout = float(idle_timeout if idle_timeout is not None else os.environ.get('QCENN_IDLE_TIMEOUT_SECONDS', '1800'))
+    retries = int(retries if retries is not None else os.environ.get('QCENN_TASK_RETRIES', '1'))
+    if min(task_timeout, idle_timeout) <= 0 or retries < 0:
+        raise ValueError('Timeouts must be positive and retries nonnegative')
+    attempts = {task['id']: 0 for task in tasks}
+    metadata = {}
+    def receipt(name, target):
+        previous = json.loads((target / 'completion.json').read_text())
+        spec = json.loads((target / 'task.json').read_text())
+        if previous['signature'] != spec['signature'] or previous.get('result_sha256') != hashlib.sha256((target / 'result.json').read_bytes()).hexdigest():
+            raise ValueError('Completed result changed: ' + name)
+        return json.loads((target / 'result.json').read_text())
+
+    def stop_process(process):
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            except ProcessLookupError:
+                process.wait()
+
+    def status(final=False):
+        write_json(directory / 'status.json', {'tasks': states, 'failed': failed,
+            'cpu_budget': cpu_budget, 'workers': jobs, 'threads_per_worker': threads,
+            'shared_cpu_pool': pooled, 'active': metadata, 'attempts': attempts,
+            'task_timeout_seconds': task_timeout, 'idle_timeout_seconds': idle_timeout,
+            'updated_at': time.time(), 'execution_complete': final})
     def stop(signum, frame):
         raise KeyboardInterrupt('Experiment scheduler interrupted')
     previous_handlers = {s: signal.signal(s, stop) for s in (signal.SIGTERM, signal.SIGINT)}
     try:
         while pending or active:
-            while pending and len(active) < jobs:
-                name, target = pending.pop(0)
+            # Try each pending task once, so an active foreign writer cannot
+            # block independent work. Locks and CPU leases survive parent death
+            # in their child, and the kernel releases them when the child exits.
+            for name, target in list(pending):
+                if len(active) >= jobs:
+                    break
+                if (target / 'completion.json').exists():
+                    outputs[name] = receipt(name, target); states[name] = 'DONE'
+                    pending.remove((name, target)); continue
+                writer = acquire_files([target / 'task.writer.lock'])
+                if writer is None:
+                    states[name] = 'WAITING_FOR_ACTIVE_WRITER'
+                    continue
+                lease = pool.acquire(threads) if pool else None
+                if pool and lease is None:
+                    writer.close()
+                    break
                 stream = (target / 'worker.log').open('a', buffering=1)
-                process = subprocess.Popen([sys.executable, '-u', '-m', 'qcenn_qml.study_utils',
-                    '--task', str((target / 'task.json').resolve())], stdout=stream,
-                    stderr=subprocess.STDOUT, env=environment, start_new_session=True)
+                descriptors = [*writer.descriptors, *(lease.descriptors if lease else []), *inherited_run_descriptors()]
+                affinity = sorted(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else list(range(os.cpu_count() or 1))
+                assigned = ','.join(str(affinity[int(slot.removeprefix('cpu-').removesuffix('.lock'))]) for slot in lease.slots) if lease else ''
+                try:
+                    process = subprocess.Popen([sys.executable, '-u', '-m', 'qcenn_qml.worker_bootstrap',
+                        '--task', str((target / 'task.json').resolve())], stdout=stream,
+                        stderr=subprocess.STDOUT, env={**environment,
+                            'QCENN_PROGRESS_FILE': str(target / 'execution-progress.json'),
+                            'QCENN_ASSIGNED_CPUS': assigned,
+                            'QCENN_INHERITED_FDS': ','.join(map(str, descriptors))},
+                        pass_fds=descriptors, start_new_session=True)
+                finally:
+                    writer.close()
+                    if lease:
+                        lease.close()
+                pending.remove((name, target))
                 active[name] = process, stream, target
+                attempts[name] += 1
+                now = time.monotonic()
+                metadata[name] = {'pid': process.pid, 'started': time.time(), 'started_clock': now,
+                    'last_activity_clock': now, 'last_cpu_seconds': 0., 'completed_measurements': 0}
                 states[name] = 'RUNNING'
                 print(f'START {name}; threads={threads}; log={target / "worker.log"}', flush=True)
             for name, (process, stream, target) in list(active.items()):
                 code = process.poll()
                 if code is None:
-                    continue
+                    now = time.monotonic()
+                    info = metadata[name]
+                    try:
+                        if now - info.get('inspected_clock', 0) < min(5., idle_timeout / 2):
+                            raise KeyError('inspection not due')
+                        info['inspected_clock'] = now
+                        beat = json.loads((target / 'heartbeat.json').read_text())
+                        progress = json.loads((target / 'execution-progress.json').read_text()) if (target / 'execution-progress.json').exists() else {}
+                        cpu = tree_cpu_seconds(beat['proc_pid']) if beat.get('proc_pid') else beat['cpu_seconds']
+                        measured = progress.get('completed_measurements', 0)
+                        if cpu > info['last_cpu_seconds'] + .01 or measured > info['completed_measurements']:
+                            info['last_activity_clock'] = now
+                        interval = max(.01, now - info.get('last_cpu_check', info['started_clock']))
+                        info.update(cpu_cores_recent=max(0., (cpu-info['last_cpu_seconds'])/interval), last_cpu_check=now,
+                            last_cpu_seconds=cpu, completed_measurements=measured,
+                            phase=progress.get('phase', 'building'), heartbeat_at=beat['updated_at'])
+                    except (OSError, ValueError, KeyError):
+                        pass
+                    elapsed = now - info['started_clock']
+                    idle = now - info['last_activity_clock']
+                    # GPU kernels may run while the host is idle; their hard
+                    # wall limit still applies. Logging heartbeats are not progress.
+                    idle_expired = idle > idle_timeout and info.get('phase') != 'gpu_sampling'
+                    if elapsed <= task_timeout and not idle_expired:
+                        continue
+                    info['timeout_reason'] = 'wall_limit' if elapsed > task_timeout else 'no_cpu_or_measurement_progress'
+                    print(f'TIMEOUT {name}: {info["timeout_reason"]}', flush=True)
+                    stop_process(process)
+                    write_json(target / f'timeout-attempt-{attempts[name]}.json', info)
+                    code = 124
                 stream.close()
                 del active[name]
                 if code == 0 and (target / 'completion.json').exists():
-                    outputs[name] = json.loads((target / 'result.json').read_text())
+                    outputs[name] = receipt(name, target)
                     states[name] = 'DONE'
                 else:
-                    states[name] = 'FAILED'
-                    failed.append(name)
+                    history_file = target / 'attempt-history.json'
+                    history = json.loads(history_file.read_text()) if history_file.exists() else []
+                    history.append({'attempt': attempts[name], 'exit_code': code, 'ended_at': time.time(),
+                        'wall_seconds': time.monotonic() - metadata[name]['started_clock'],
+                        'last_phase': metadata[name].get('phase'),
+                        'note': 'Failed simulator/compilation wall time is overhead, separately from logical native-CX budgets for completed reported shots.'})
+                    write_json(history_file, history)
+                    if attempts[name] <= retries:
+                        states[name] = 'RETRYING'
+                        pending.append((name, target))
+                    else:
+                        states[name] = 'TIMED_OUT' if code == 124 else 'FAILED'
+                        failed.append(name)
+                del metadata[name]
                 print(f'END {name}; state={states[name]}; exit={code}', flush=True)
             if time.monotonic() - last_update >= 5:
-                write_json(directory / 'status.json', {'tasks': states, 'cpu_budget': cpu_budget,
-                    'workers': jobs, 'threads_per_worker': threads})
+                status()
                 if time.monotonic() - last_heartbeat >= 30:
                     print(f'Study progress: {sum(v == "DONE" for v in states.values())}/{len(states)} '
                         f'completed; {len(active)} active', flush=True)
                     last_heartbeat = time.monotonic()
                 last_update = time.monotonic()
-            if active:
+            if active or pending:
                 time.sleep(.2)
     finally:
         for name in active:
             states[name] = 'INTERRUPTED'
         for process, stream, _ in active.values():
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGTERM)
-        for process, stream, _ in active.values():
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+            stop_process(process)
             stream.close()
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
-        write_json(directory / 'status.json', {'tasks': states, 'failed': failed})
+        status(final=not active and not pending)
     if failed:
         raise RuntimeError('Experiment tasks failed; inspect worker.log: ' + ', '.join(failed))
     return [outputs[task['id']] for task in tasks]
@@ -197,6 +303,19 @@ def main(argv=None):
     parser.add_argument('--task', required=True)
     spec = json.loads(Path(parser.parse_args(argv).task).read_text())
     module, function = spec['worker'].split(':')
+    first_image = spec.get('image_offset', spec.get('case_start', 0)) == 0
+    os.environ['QCENN_SAVE_FULL_READOUT_AUDIT'] = '1' if first_image else '0'
+    # This reports liveness and CPU separately from completed measurements.
+    # It never turns a logging heartbeat into scientific progress.
+    heartbeat_stop = threading.Event()
+    proc_pid = int(Path('/proc/self/stat').read_text().split()[0])
+    def heartbeat():
+        while not heartbeat_stop.is_set():
+            write_json(Path(spec['output_dir']) / 'heartbeat.json', {
+                'pid': os.getpid(), 'proc_pid': proc_pid, 'updated_at': time.time(), 'cpu_seconds': time.process_time()})
+            heartbeat_stop.wait(5)
+    thread = threading.Thread(target=heartbeat, daemon=True)
+    thread.start()
     try:
         if 'source_sha256' in spec:
             from .recurrent_mnist import provenance
@@ -209,6 +328,9 @@ def main(argv=None):
     except BaseException:
         write_json(Path(spec['output_dir']) / 'error.json', {'traceback': traceback.format_exc()})
         raise
+    finally:
+        heartbeat_stop.set()
+        thread.join(timeout=1)
 
 
 if __name__ == '__main__':

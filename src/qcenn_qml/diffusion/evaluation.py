@@ -11,6 +11,7 @@ from ..coherent import CORE_DISCLOSURE, _compile_components, decode_postselectio
 from ..corpus_memory import denoising_memory_circuit
 from ..recurrent_mnist import provenance, write_json
 from ..study_utils import circuit_digest, cluster_interval, independent_seed, initialize
+from ..resources import single_writer
 
 
 def noisy_target_probability(distribution, target, bits, error):
@@ -19,10 +20,12 @@ def noisy_target_probability(distribution, target, bits, error):
         for code, probability in enumerate(distribution)))
 
 
+@single_writer
 def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
         seed=42, readout_error=.05, corpus_kind='text', corpus_file=None, amplify=1,
         output_dir='results/diffusion-matched', measurement_seed=None, readout_errors=None,
-        max_train_records=256, max_vocabulary=64, batch_size=4, resume=False):
+        max_train_records=256, max_vocabulary=64, batch_size=4, resume=False,
+        case_start=0, case_stop=None, prepared_corpus=None, prepared_corpus_sha256=None):
     configuration = dict(locals())
     from qiskit import qpy
     from .matched import corpus
@@ -39,15 +42,31 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
     measurement_seed = seed if measurement_seed is None else measurement_seed
     directory = Path(output_dir)
     manifest = initialize(directory, configuration, provenance(), resume)
-    vocab, mask, train, test, split = corpus(corpus_kind, corpus_file, seed,
-        max_train_records=max_train_records, max_vocabulary=max_vocabulary)
+    if prepared_corpus:
+        prepared_path = Path(prepared_corpus)
+        if hashlib.sha256(prepared_path.read_bytes()).hexdigest() != prepared_corpus_sha256:
+            raise ValueError('Prepared corpus cache changed')
+        prepared = json.loads(prepared_path.read_text())
+        expected = {'seed': seed, 'max_train_records': max_train_records, 'max_vocabulary': max_vocabulary,
+            'corpus_sha256': configuration.get('corpus_file_sha256')}
+        if prepared['configuration'] != expected:
+            raise ValueError('Prepared corpus does not match this split/settings')
+        vocab, mask, train, test, split = [prepared[name] for name in ('vocabulary', 'mask', 'training', 'heldout', 'split')]
+    else:
+        vocab, mask, train, test, split = corpus(corpus_kind, corpus_file, seed,
+            max_train_records=max_train_records, max_vocabulary=max_vocabulary)
     order = np.random.default_rng(seed + 100).permutation(len(test))
     selected = order[:examples] if examples else order
+    if case_start < 0 or (case_stop is not None and case_stop <= case_start):
+        raise ValueError('Invalid case shard')
+    selected = selected[case_start:case_stop]
     cases = [test[int(i)] for i in selected]
     if not cases:
         raise ValueError('No held-out evaluation cases')
-    details = split.get('heldout_windows', [{'sentence_id': i, 'target_in_vocabulary': True,
-        'context_in_vocabulary': True, 'words': [vocab[x] for x in window]} for i, window in enumerate(test)])
+    details = split.get('heldout_windows')
+    if details is None:
+        details = [{'sentence_id': i, 'target_in_vocabulary': True,
+            'context_in_vocabulary': True, 'words': [vocab[x] for x in window]} for i, window in enumerate(test)]
     case_details = [details[int(i)] for i in selected]
     bits = max(1, (len(vocab) - 1).bit_length())
     contexts = [int(a) + (int(c) << bits) for a, _, c in train]
@@ -55,9 +74,14 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
     unused = next(code for code in range(1 << (2 * bits)) if code not in set(contexts))
     queries = [a + (c << bits) if detail['context_in_vocabulary'] else unused
         for (a, _, c), detail in zip(cases, case_details, strict=True)]
-    write_json(directory / 'splits.json', {'vocabulary': vocab, 'training_records': train,
-        'heldout_records': test, 'evaluated_records': cases,
-        'evaluated_window_indices': selected.tolist(), 'evaluated_details': case_details, **split})
+    split_record = {'vocabulary': vocab, 'evaluated_records': cases,
+        'evaluated_window_indices': selected.tolist(), 'evaluated_details': case_details}
+    if prepared_corpus:
+        split_record.update(prepared_corpus=prepared_corpus, prepared_corpus_sha256=prepared_corpus_sha256,
+            note='Complete split/raw records are archived once in the shared prepared corpus, not copied into every case shard')
+    else:
+        split_record.update(training_records=train, heldout_records=test, **split)
+    write_json(directory / 'splits.json', split_record)
     np.savez_compressed(directory / 'raw-memory.npz', contexts=contexts, values=values)
     # Reference arrays are never passed to the quantum circuit constructor.
     table_counts = Counter((a, c, b) for a, b, c in train)
@@ -95,11 +119,12 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
                 beta=beta, eta=eta, amplify=amplify) for offset, (_, b, _) in enumerate(subset)]
             construction_seconds = perf_counter() - timer
             timer = perf_counter()
-            native = [_compile_components(circuit, independent_seed(seed, step, start, 71)) for circuit in circuits]
+            global_start = case_start + start
+            native = [_compile_components(circuit, independent_seed(seed, step, global_start, 71)) for circuit in circuits]
             compile_seconds = perf_counter() - timer
             identity = [circuit_digest(circuit) for circuit in native]
             fingerprints.extend(identity)
-            if start == 0:
+            if global_start == 0:
                 with (directory / f'steps-{step}-native.qpy').open('wb') as stream:
                     qpy.dump(native[0], stream)
             for mode, error in modes:
@@ -111,7 +136,7 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
                     samples, cost = saved['counts'], saved['resources']
                 else:
                     samples, _, cost = execute(native, shots,
-                        independent_seed(measurement_seed, step, start, 73), error, precompiled=True)
+                        independent_seed(measurement_seed, step, global_start, 73), error, precompiled=True)
                     write_json(path, {'native_circuit_sha256': identity, 'counts': samples, 'resources': cost,
                         'classical_construction_seconds': construction_seconds,
                         'classical_compilation_seconds': compile_seconds})
@@ -131,13 +156,16 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
                     known = detail['target_in_vocabulary']
                     observed = float(distribution[b]) if known else 0.
                     ideal_target = noisy_target_probability(ideal, b, bits, error) if known else 0.
-                    row = {'mode': mode, 'steps': step, 'case_index': case,
+                    row = {'mode': mode, 'steps': step, 'case_index': case_start + case,
                         'heldout_window_index': int(selected[case]), **detail,
                         'context': [detail['words'][0], detail['words'][2]], 'truth': detail['words'][1],
                         **decoded, 'quantum_distribution': distribution.tolist(),
                         'quantum_target_frequency': observed, 'analytic_ideal_target_probability': float(ideal[b]) if known else 0.,
                         'matched_classical_channel_target_probability': ideal_target,
                         'top1_correct': bool(known and decoded['prediction'] == b),
+                        'classical_direct_target_probability': baseline_correct[case],
+                        'classical_direct_top1_correct': bool(known and q.sum() and int(q.argmax()) == b),
+                        'context_seen_in_training': bool(q.sum()),
                         'native_circuit_sha256': identity[offset]}
                     observations[mode].append(row)
                     all_rows.append(row)
@@ -171,7 +199,7 @@ def execute_benchmark(shots=1024, beta=1., eta=.65, steps=(0, 1, 3), examples=8,
     report = {'name': 'Raw-corpus quantum-memory masked denoising', **CORE_DISCLOSURE,
         'experiment': 'matched_heldout_text_diffusion', 'configuration': configuration,
         'status': 'nonparametric_quantum_memory_not_a_trained_diffusion_LLM',
-        'backend': 'Qiskit Aer MPS, truncation 1e-20', 'vocabulary': vocab, 'mask_token': vocab[mask],
+        'backend': 'Recorded native gate sampling; CPU MPS or explicitly configured verified GPU worker', 'vocabulary': vocab, 'mask_token': vocab[mask],
         'train_count': len(train), 'heldout_count': len(test), 'evaluation_count': len(cases),
         'evaluated_all_heldout_windows': len(cases) == len(test),
         'unique_evaluation_contexts': len(set(queries)), 'independent_heldout_sentence_count': len(set(groups)),

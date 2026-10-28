@@ -49,7 +49,7 @@ sys.exit(2 if blocked else 0)
 
 def environment(fake_python,**extra):
     return {**os.environ,'QCENN_PYTHON':str(fake_python),'QCENN_CPUS':'4',
-            'QCENN_JOBS':'2','QCENN_LATEST_FILE':str(fake_python.parent/'latest.txt'),**extra}
+            'QCENN_JOBS':'2','QCENN_LEGACY_RUNNER':'1','QCENN_LATEST_FILE':str(fake_python.parent/'latest.txt'),**extra}
 
 
 def run(tmp_path,fake_python,**extra):

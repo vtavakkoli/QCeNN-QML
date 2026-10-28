@@ -16,7 +16,8 @@ from .coherent import CORE_DISCLOSURE, _compile_components, decode_postselection
 from .mnist_data import load_dataset
 from .quantum_memory import memory_circuit
 from .recurrent_mnist import classification_metrics, patches_from_images, provenance, write_json
-from .study_utils import circuit_digest, cluster_interval, digest, independent_seed, initialize, run_tasks
+from .study_utils import circuit_digest, cluster_interval, digest, execution_policy, independent_seed, initialize, run_tasks
+from .resources import single_writer
 
 
 PREVIOUS_TESTS = Path(__file__).parent / 'assets' / 'evaluated-mnist-indices.json'
@@ -86,11 +87,19 @@ def _native(query, keys, labels, config, seed):
 
 
 def _sample(native, shots, seed, path, rounds, truth, cx_budget=None):
+    native_hash = circuit_digest(native)
     if path.exists():
-        return json.loads(path.read_text())
+        cached = json.loads(path.read_text())
+        expected = decode_postselection(cached['counts'], 4, rounds, 10)
+        if (cached.get('native_circuit_sha256') != native_hash or cached['measurement_seed'] != seed
+                or cached['total_shots'] != shots or cached['truth'] != int(truth)
+                or cached['cx_budget'] != cx_budget or any(cached[k] != value for k, value in expected.items())):
+            raise ValueError('Cached measurement identity/counts changed: ' + str(path))
+        return cached
     samples, _, resources = execute([native], shots, seed, precompiled=True)
     row = {**decode_postselection(samples[0], 4, rounds, 10), 'truth': int(truth),
-        'measurement_seed': seed, 'resources': resources, 'cx_budget': cx_budget}
+        'measurement_seed': seed, 'resources': resources, 'cx_budget': cx_budget,
+        'native_circuit_sha256': native_hash}
     if cx_budget is not None and resources['cx_shot_weighted_total'] > cx_budget:
         raise RuntimeError('Hard CX budget exceeded')
     write_json(path, row)
@@ -106,13 +115,14 @@ def _measure_grid(images, truth, keys, labels, config, task, directory, *, test=
     anchor_images, anchor_keys, anchor_labels = anchor_data
     budgets = task['shot_budgets'] if not test else [task['selected_base_shots']]
     seeds = task['measurement_seeds'] if not test else [task['test_measurement_seed']]
-    for index, (query, target) in enumerate(zip(images, truth, strict=True)):
+    for local_index, (query, target) in enumerate(zip(images, truth, strict=True)):
+        index = local_index + task.get('image_offset', 0)
         compile_seed = independent_seed(task['data_seed'], index, 17)
         timer = perf_counter()
         native = _native(query, keys, labels, config, compile_seed)
         compilation_seconds = perf_counter() - timer
         timer = perf_counter()
-        anchored = native if config == anchor else _native(anchor_images[index], anchor_keys, anchor_labels, anchor, compile_seed)
+        anchored = native if config == anchor else _native(anchor_images[local_index], anchor_keys, anchor_labels, anchor, compile_seed)
         anchor_seconds = perf_counter() - timer
         metadata = directory / f'circuit-{index:05d}.json'
         if not metadata.exists():
@@ -121,6 +131,8 @@ def _measure_grid(images, truth, keys, labels, config, task, directory, *, test=
                 'classical_budget_anchor_compilation_seconds': anchor_seconds,
                 'compilation_amortization': 'one native circuit reused across all modes, budgets and measurement seeds',
                 'native_qubits': native.num_qubits, 'native_depth': native.depth()})
+        elif json.loads(metadata.read_text())['native_circuit_sha256'] != circuit_digest(native):
+            raise ValueError('Compiled circuit changed on resume')
         cx, anchor_cx = int(native.count_ops().get('cx', 0)), int(anchored.count_ops().get('cx', 0))
         if index == 0:
             with (directory / 'example-native.qpy').open('wb') as stream:
@@ -134,8 +146,8 @@ def _measure_grid(images, truth, keys, labels, config, task, directory, *, test=
                     path = directory / f'{mode}-b{budget}-s{repetition}-i{index:05d}.json'
                     row = _sample(native, shots, seed, path, config['rounds'], target, cx_budget)
                     summaries[mode, budget, repetition].append(row)
-        write_json(directory / 'progress.json', {'completed_images': index + 1, 'total_images': len(images)})
-        print(f'{directory.name}: measured image {index + 1}/{len(images)} at all budgets/seeds', flush=True)
+        write_json(directory / 'progress.json', {'completed_images': local_index + 1, 'total_images': len(images), 'global_image_index': index})
+        print(f'{directory.name}: measured image {local_index + 1}/{len(images)} at all budgets/seeds', flush=True)
     result = []
     for (mode, budget, repetition), rows in summaries.items():
         predictions = [r['prediction'] for r in rows]
@@ -149,6 +161,98 @@ def _measure_grid(images, truth, keys, labels, config, task, directory, *, test=
             'accepted_shots_min': min(r['accepted_shots'] for r in rows),
             'raw_counts_directory': str(directory), 'native_circuit_archive_scope': 'first image; all others reproducible from raw images and task manifest'})
     return result
+
+
+def merge_grids(grids):
+    grouped = defaultdict(list)
+    for grid in grids:
+        for row in grid:
+            grouped[row['mode'], row['base_shots'], row['measurement_seed']].append(row)
+    result = []
+    for (mode, budget, seed), rows in grouped.items():
+        truth = sum((r['truth'] for r in rows), [])
+        predicted = sum((r['predictions'] for r in rows), [])
+        result.append({'mode': mode, 'base_shots': budget, 'measurement_seed': seed,
+            **classification_metrics(truth, predicted), 'predictions': predicted, 'truth': truth,
+            **{key: sum(row[key] for row in rows) for key in (
+                'accepted_shots', 'total_shots', 'cx_shot_weighted_total', 'sampling_seconds')},
+            'accepted_shots_min': min(row['accepted_shots_min'] for row in rows),
+            'raw_counts_directories': [row['raw_counts_directory'] for row in rows]})
+    return result
+
+
+def image_task(task):
+    """An independent fit/validation image batch, with no test data access."""
+    directory, config = Path(task['output_dir']), task['configuration']
+    prepared = Path(task['prepared_data'])
+    if hashlib.sha256(prepared.read_bytes()).hexdigest() != task['prepared_data_sha256']:
+        raise ValueError('Prepared training/validation data changed')
+    start, stop = task['image_offset'], task['image_stop']
+    with np.load(prepared) as data:
+        selected = memory_indices(data['training_labels'], config['memory'], task['data_seed'])
+        keys = _vectors(data['training_images'][selected], config)
+        labels = data['training_labels'][selected]
+        if task['image_kind'] == 'fit':
+            rows = []
+            for index in range(start, min(stop, len(keys))):
+                native = _native(keys[index], keys, labels, config, independent_seed(task['data_seed'], index, 3))
+                rows.append(_sample(native, task['fit_shots'], independent_seed(task['data_seed'], index, task['fit_shots'], 7),
+                    directory / f'image-{index:03d}.json', config['rounds'], labels[index]))
+            return {'rows': rows, 'truth': labels[start:stop].tolist()}
+        images, truth = _vectors(data['validation_images'][start:stop], config), data['validation_labels'][start:stop]
+        anchor = task['budget_anchor_configuration']
+        indices = memory_indices(data['training_labels'], anchor['memory'], task['data_seed'])
+        anchor_data = (_vectors(data['validation_images'][start:stop], anchor),
+            _vectors(data['training_images'][indices], anchor), data['training_labels'][indices])
+    return {'results': _measure_grid(images, truth, keys, labels, config, task, directory / 'validation', anchor_data=anchor_data)}
+
+
+def evaluate_sharded(tasks, *, jobs, cpu_budget, directory, batch_size):
+    """Gate each candidate first, then schedule only its permitted validation."""
+    directory = Path(directory)
+    results = {t['id']: {'configuration': t['configuration'], 'data_seed': t['data_seed'],
+        'fit_gate': [], 'fit_gate_passed': False, 'results': [], 'test_evaluated': False,
+        'validation_evaluated': False, 'prepared_data_sha256': t['prepared_data_sha256']} for t in tasks}
+    pending = list(tasks)
+    for budget in tasks[0]['gate_shot_budgets'] if tasks else []:
+        shards = []
+        for task in pending:
+            for index in range(0, task['configuration']['memory'] * 10, batch_size):
+                shards.append({**task, 'id': task['id'] + f'-i{index:05d}', 'parent': task['id'],
+                    'image_kind': 'fit', 'fit_shots': budget, 'image_offset': index, 'image_stop': index + batch_size})
+        measured = run_tasks('qcenn_qml.mnist_study:image_task', shards, jobs=jobs,
+            cpu_budget=cpu_budget, directory=directory / f'fit-{budget}')
+        grouped = defaultdict(list)
+        for task, row in zip(shards, measured, strict=True):
+            grouped[task['parent']].append(row)
+        for parent, rows in grouped.items():
+            truth = sum((r['truth'] for r in rows), [])
+            predictions = [value['prediction'] for row in rows for value in row['rows']]
+            metrics = classification_metrics(truth, predictions)
+            results[parent]['fit_gate'].append({'shots': budget, **metrics})
+            results[parent]['fit_gate_passed'] = metrics['accuracy'] == 1.
+        pending = [t for t in pending if not results[t['id']]['fit_gate_passed']]
+        if not pending:
+            break
+    shards = []
+    for task in tasks:
+        if not results[task['id']]['fit_gate_passed']:
+            continue
+        with np.load(task['prepared_data']) as data:
+            size = len(data['validation_labels'])
+        for index in range(0, size, batch_size):
+            shards.append({**task, 'id': task['id'] + f'-i{index:05d}', 'parent': task['id'],
+                'image_kind': 'validation', 'image_offset': index, 'image_stop': index + batch_size})
+    values = run_tasks('qcenn_qml.mnist_study:image_task', shards, jobs=jobs,
+        cpu_budget=cpu_budget, directory=directory / 'validation')
+    grouped = defaultdict(list)
+    for task, row in zip(shards, values, strict=True):
+        grouped[task['parent']].append(row['results'])
+    for task in tasks:
+        row = results[task['id']]
+        row.update(results=merge_grids(grouped[task['id']]),
+            validation_evaluated=row['fit_gate_passed'], status='DONE' if row['fit_gate_passed'] else 'BLOCKED_FIT_GATE')
+    return [results[t['id']] for t in tasks]
 
 
 def evaluate_task(task):
@@ -230,8 +334,8 @@ def summarize(candidates, agreement_threshold):
     return summaries
 
 
-def choose(summaries):
-    eligible = [r for r in summaries if r.get('eligible') and r.get('mode') == 'equal_cnot']
+def choose(summaries, mode='equal_shot'):
+    eligible = [r for r in summaries if r.get('eligible') and r.get('mode') == mode]
     return min(eligible, key=lambda r: (-r['accuracy_mean'], r['cx_shot_weighted_mean'],
         configuration_id(r['configuration']), r['base_shots'])) if eligible else None
 
@@ -246,10 +350,21 @@ def test_task(task):
         anchor = task['budget_anchor_configuration']
         anchor_selected = memory_indices(data['training_labels'], anchor['memory'], task['data_seed'])
         anchor_keys, anchor_labels = _vectors(data['training_images'][anchor_selected], anchor), data['training_labels'][anchor_selected]
-    _, _, test_images, test_labels = load_dataset(task['dataset'], task['data_root'], download=False)
     ids = np.asarray(task['test_indices'], int)
-    images, truth = _vectors(test_images[ids], config), test_labels[ids]
-    anchor_data = (_vectors(test_images[ids], anchor), anchor_keys, anchor_labels)
+    if task.get('test_cache'):
+        cache_path = Path(task['test_cache'])
+        if hashlib.sha256(cache_path.read_bytes()).hexdigest() != task['test_cache_sha256']:
+            raise ValueError('Frozen test cache changed')
+        with np.load(cache_path) as cache:
+            start = task.get('image_offset', 0); stop = start + len(ids)
+            if not np.array_equal(ids, cache['indices'][start:stop]):
+                raise ValueError('Frozen test indices differ from cache')
+            raw, truth = cache['images'][start:stop], cache['labels'][start:stop]
+    else:
+        _, _, test_images, test_labels = load_dataset(task['dataset'], task['data_root'], download=False)
+        raw, truth = test_images[ids], test_labels[ids]
+    images = _vectors(raw, config)
+    anchor_data = (_vectors(raw, anchor), anchor_keys, anchor_labels)
     results = {}
     for name, model in [('selected', config), ('k0_reference', {**config, 'rounds': 1, 'damping': 0.})]:
         # k=0 uses the identical raw encoding/memory and a single overlap filter.
@@ -261,7 +376,8 @@ def test_task(task):
         'test_evaluated': True, 'freeze_sha256': task['freeze_sha256'], 'results': results}
 
 
-def test_frozen(freeze_file, output_dir, *, jobs=1, cpu_budget=1, data_root='data', resume=False):
+@single_writer
+def test_frozen(freeze_file, output_dir, *, jobs=1, cpu_budget=1, data_root='data', resume=False, image_batch_size=0):
     freeze_path = Path(freeze_file).resolve()
     freeze = json.loads(freeze_path.read_text())
     payload = {k: v for k, v in freeze.items() if k != 'sha256'}
@@ -272,23 +388,55 @@ def test_frozen(freeze_file, output_dir, *, jobs=1, cpu_budget=1, data_root='dat
         raise ValueError('Frozen study source differs from current source')
     if source['packages'] != freeze['source']['packages']:
         raise ValueError('Frozen study package versions differ from current environment')
+    if freeze.get('execution_policy', execution_policy()) != execution_policy():
+        raise ValueError('Frozen study execution backend policy differs from current environment')
     target = Path(output_dir)
-    initialize(target, {'freeze_sha256': freeze['sha256'], 'data_root': str(Path(data_root).resolve())}, source, resume)
+    initialize(target, {'freeze_sha256': freeze['sha256'], 'data_root': str(Path(data_root).resolve()),
+        'image_batch_size': image_batch_size}, source, resume)
     tasks = []
+    test_images = test_labels = None
+    if image_batch_size:
+        _, _, test_images, test_labels = load_dataset(freeze['dataset'], data_root, download=False)
     for seed, split in freeze['splits'].items():
         prepared = (freeze_path.parent / split['prepared_data']).resolve()
         if hashlib.sha256(prepared.read_bytes()).hexdigest() != split['prepared_data_sha256']:
             raise ValueError('Frozen memory/validation archive changed')
-        tasks.append({'id': 'test-' + seed, 'configuration': freeze['selected']['configuration'],
+        base = {'id': 'test-' + seed, 'configuration': freeze['selected']['configuration'],
             'prepared_data': str(prepared), 'data_seed': int(seed), 'dataset': freeze['dataset'],
             'data_root': str(Path(data_root).resolve()), 'test_indices': split['fresh_test'],
             'selected_base_shots': freeze['selected']['base_shots'], 'shot_budgets': [],
             'measurement_seeds': [], 'test_measurement_seed': freeze['test_measurement_seed'],
             'budget_anchor_configuration': freeze['budget_anchor_configuration'],
             'source_sha256': freeze['source']['source_sha256'],
-            'freeze_sha256': freeze['sha256']})
+            'freeze_sha256': freeze['sha256']}
+        if image_batch_size:
+            cache = target / f'test-cache-{seed}.npz'
+            cache_receipt = cache.with_suffix('.json')
+            ids = np.asarray(split['fresh_test'], int)
+            if not cache.exists():
+                np.savez_compressed(cache, images=test_images[ids], labels=test_labels[ids], indices=ids)
+                write_json(cache_receipt, {'sha256': hashlib.sha256(cache.read_bytes()).hexdigest(), 'freeze_sha256': freeze['sha256']})
+            cache_sha = hashlib.sha256(cache.read_bytes()).hexdigest()
+            if json.loads(cache_receipt.read_text()) != {'sha256': cache_sha, 'freeze_sha256': freeze['sha256']}:
+                raise ValueError('Frozen test cache receipt changed')
+            for start in range(0, len(ids), image_batch_size):
+                tasks.append({**base, 'id': base['id'] + f'-i{start:05d}', 'image_offset': start,
+                    'test_cache': str(cache), 'test_cache_sha256': cache_sha,
+                    'test_indices': ids[start:start + image_batch_size].tolist()})
+        else:
+            tasks.append(base)
     rows = run_tasks('qcenn_qml.mnist_study:test_task', tasks, jobs=jobs, cpu_budget=cpu_budget,
         directory=target / 'tasks')
+    if image_batch_size:
+        merged = []
+        for seed, split in freeze['splits'].items():
+            parts = [r for r in rows if r['data_seed'] == int(seed)]
+            indices = sum((r['test_indices'] for r in parts), [])
+            if indices != split['fresh_test']:
+                raise ValueError('Frozen test did not measure every reserved image exactly once')
+            merged.append({**{k: v for k, v in parts[0].items() if k != 'results'},
+                'test_indices': indices, 'results': {name: merge_grids([r['results'][name] for r in parts]) for name in ('selected', 'k0_reference')}})
+        rows = merged
     report = {'experiment': 'frozen_fresh_mnist_test', **CORE_DISCLOSURE, 'status': 'DONE',
         'freeze_sha256': freeze['sha256'], 'test_results': rows, 'source': source,
         'selection_used_test_labels': False, 'previously_evaluated_test_indices_excluded': freeze['excluded_test_indices']}
@@ -319,12 +467,13 @@ def test_frozen(freeze_file, output_dir, *, jobs=1, cpu_budget=1, data_root='dat
     return report
 
 
+@single_writer
 def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 202, 303),
         shot_budgets=(1024, 4096, 16384), gate_shot_budgets=(1024, 4096, 16384),
         validation_per_class=2, test_per_class=100, damping_values=(.05,), agreement_threshold=.95,
         test_measurement_seed=99991, exclusions_file=None, jobs=1, cpu_budget=1,
         data_root='data', no_download=False, output_dir='results/mnist-study', resume=False,
-        phase='all', smoke=False):
+        phase='all', smoke=False, selection_mode='equal_shot', image_batch_size=0):
     if len(set(data_seeds)) != len(data_seeds) or not data_seeds:
         raise ValueError('Unique nonempty data seeds required')
     if len(set(measurement_seeds)) < 2 or len(set(measurement_seeds)) != len(measurement_seeds) or test_measurement_seed in measurement_seeds:
@@ -337,6 +486,8 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         raise ValueError('Invalid split sizes/stability threshold')
     if any(not 0 < d < 1 for d in damping_values):
         raise ValueError('Damping ablations require 0 < damping < 1')
+    if selection_mode not in ('equal_shot', 'equal_cnot') or image_batch_size < 0:
+        raise ValueError('Invalid selection mode/image batch size')
     args = dict(locals())
     for key in ('resume', 'phase', 'jobs', 'cpu_budget', 'no_download'):
         args.pop(key)
@@ -387,11 +538,16 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
                     'measurement_seeds': list(measurement_seeds)})
                 tasks[-1]['source_sha256'] = source['source_sha256']
         print(f'STAGE {name}: {len(tasks)} configuration/data-seed jobs', flush=True)
-        completed.extend(run_tasks('qcenn_qml.mnist_study:evaluate_task', tasks, jobs=jobs,
-            cpu_budget=cpu_budget, directory=directory / name))
+        if image_batch_size:
+            completed.extend(evaluate_sharded(tasks, jobs=jobs, cpu_budget=cpu_budget,
+                directory=directory / name, batch_size=image_batch_size))
+        else:
+            completed.extend(run_tasks('qcenn_qml.mnist_study:evaluate_task', tasks, jobs=jobs,
+                cpu_budget=cpu_budget, directory=directory / name))
         summaries = summarize(completed, agreement_threshold)
-        selected = choose(summaries)
+        selected = choose(summaries, selection_mode)
         stage = {'stage': name, 'summaries': summaries, 'selected': selected,
+            'selection_mode': selection_mode, 'matched_cnot_selected': choose(summaries, 'equal_cnot'),
             'status': 'DONE' if selected else 'BLOCKED_FIT_OR_MEASUREMENT_STABILITY'}
         stages.append(stage)
         write_json(directory / (name + '.json'), stage)
@@ -414,12 +570,13 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         'record_order': 'Seeded permutation per memory size; damping does not use class-sorted record addresses',
         'status': 'BLOCKED_FIT_OR_MEASUREMENT_STABILITY', 'selection_used_test_labels': False}
     if selected:
-        payload = {'schema': 1, 'dataset': dataset, 'selected': selected, 'splits': splits,
+        payload = {'schema': 2, 'dataset': dataset, 'selected': selected, 'splits': splits,
             'excluded_test_indices': sorted(excluded), 'test_measurement_seed': test_measurement_seed,
-            'selection_used_test_labels': False, 'source': source,
+            'selection_used_test_labels': False, 'source': source, 'execution_policy': execution_policy(),
             'budget_anchor_configuration': configuration(rounds=1, side=side),
             'cx_budget_definition': 'Native CX count of k=0, one record per digit, amplitude encoding, times base shot budget; identical budget across all candidates for each image',
-            'selection_rule': 'eligible equal-CNOT validation accuracy, then measured CX cost, then deterministic configuration order'}
+            'selection_mode': selection_mode,
+            'selection_rule': f'eligible {selection_mode} validation accuracy, then measured CX cost, then deterministic configuration order; equal-CNOT efficiency is reported separately'}
         frozen = {**payload, 'sha256': digest(payload)}
         freeze_path = directory / 'frozen-configuration.json'
         if freeze_path.exists() and json.loads(freeze_path.read_text()) != frozen:
@@ -428,7 +585,7 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         final.update(status='VALIDATED_AND_FROZEN', selected=selected, freeze_sha256=frozen['sha256'])
         if phase == 'all':
             result = test_frozen(freeze_path, directory / 'fresh-test', jobs=jobs, cpu_budget=cpu_budget,
-                data_root=data_root, resume=resume)
+                data_root=data_root, resume=resume, image_batch_size=image_batch_size)
             final.update(status='DONE', test_evaluated=True, test_results=result['test_results'],
                 test_summary=result['summary'], paired_comparisons=result['paired_comparisons'])
     write_json(directory / 'report.json', final)
@@ -447,6 +604,8 @@ def main(argv=None):
     parser.add_argument('--gate-shot-budgets', nargs='+', type=int, default=[1024, 4096, 16384])
     parser.add_argument('--damping-values', nargs='+', type=float, default=[.05])
     parser.add_argument('--agreement-threshold', type=float, default=.95)
+    parser.add_argument('--selection-mode', choices=['equal_shot', 'equal_cnot'], default='equal_shot')
+    parser.add_argument('--image-batch-size', type=int, default=1, help='Independent images per worker; 0 retains coarse seed/config tasks')
     parser.add_argument('--validation-per-class', type=int, default=2)
     parser.add_argument('--test-per-class', type=int, default=100)
     parser.add_argument('--test-measurement-seed', type=int, default=99991)
@@ -467,7 +626,7 @@ def main(argv=None):
         if not freeze_file:
             parser.error('--phase test requires --freeze-file')
         result = test_frozen(freeze_file, options['output_dir'], jobs=options['jobs'],
-            cpu_budget=options['cpu_budget'], data_root=options['data_root'], resume=options['resume'])
+            cpu_budget=options['cpu_budget'], data_root=options['data_root'], resume=options['resume'], image_batch_size=options['image_batch_size'])
     else:
         if freeze_file:
             parser.error('--freeze-file is only valid for --phase test')

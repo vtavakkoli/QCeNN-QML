@@ -1,4 +1,9 @@
 name: Test quantum inference circuits
+env:
+  RAYON_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+  OPENBLAS_NUM_THREADS: '1'
+  MKL_NUM_THREADS: '1'
 on:
   push:
   pull_request:
@@ -11,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install -e '.[test]'
+      - run: python -m pip install -e '.[accelerated,test]'
       - run: python -m pytest -q
       - name: Staged studies, scientific blocking and per-track archives (proxy diagnostics)
         env:

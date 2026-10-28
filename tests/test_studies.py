@@ -106,6 +106,37 @@ def test_validation_selection_rejects_fit_failure_instability_and_false_plateau(
     assert mnist.choose(mnist.summarize([candidate()], .95))['base_shots'] == 64
 
 
+def test_sufficient_shot_stability_advances_when_matched_cost_is_unstable():
+    row = candidate()
+    for value in row['results']:
+        if value['mode'] == 'equal_cnot' and value['measurement_seed'] == 202:
+            value['predictions'] = [1]
+    summary = mnist.summarize([row], .95)
+    assert mnist.choose(summary)['mode'] == 'equal_shot'
+    assert mnist.choose(summary, 'equal_cnot') is None
+
+
+def test_sharded_fit_precedes_validation_and_quantum_counts_are_preserved(tmp_path):
+    labels = np.repeat(np.arange(10), 3)
+    images = np.zeros((30, 4, 4), np.uint8)
+    for index, label in enumerate(labels):
+        images[index].flat[label] = 255
+    prepared = tmp_path / 'prepared.npz'
+    np.savez(prepared, training_images=images, training_labels=labels,
+        validation_images=images[:2], validation_labels=labels[:2])
+    import hashlib
+    task = {'id': 'orthogonal-diagnostic', 'configuration': mnist.configuration(rounds=2, memory=3, side=4),
+        'prepared_data': str(prepared), 'prepared_data_sha256': hashlib.sha256(prepared.read_bytes()).hexdigest(),
+        'data_seed': 42, 'gate_shot_budgets': [128], 'shot_budgets': [32, 64],
+        'measurement_seeds': [101, 202], 'budget_anchor_configuration': mnist.configuration(1, side=4)}
+    rows = mnist.evaluate_sharded([task], jobs=2, cpu_budget=2, directory=tmp_path / 'sharded', batch_size=10)
+    assert rows[0]['fit_gate_passed'] and rows[0]['validation_evaluated']
+    assert all(row['truth'] == [0, 0] and set(row['predictions']) <= {0, -1} for row in rows[0]['results'])
+    for phase in ('fit-128', 'validation'):
+        status = json.loads((tmp_path / 'sharded' / phase / 'status.json').read_text())
+        assert status['execution_complete'] and set(status['tasks'].values()) == {'DONE'}
+
+
 def test_gate_failure_prevents_validation_execution(monkeypatch, tmp_path):
     images = np.zeros((30, 4, 4), dtype=np.uint8)
     labels = np.repeat(np.arange(10), 3)
@@ -172,6 +203,24 @@ def test_every_validation_stage_precedes_freeze_and_test(monkeypatch, tmp_path):
         shot_budgets=[64, 128], gate_shot_budgets=[128], validation_per_class=1,
         test_per_class=1, output_dir=str(tmp_path / 'study'))
     assert order[-1] == 'test' and result['status'] == 'DONE'
+
+
+def test_complete_sharded_protocol_measures_memories_then_freezes_before_fresh_test(monkeypatch, tmp_path):
+    # Deliberately orthogonal diagnostic images, never real-MNIST evidence.
+    labels = np.repeat(np.arange(10), 8)
+    images = np.zeros((len(labels), 4, 4), np.uint8)
+    for index, label in enumerate(labels):
+        images[index].flat[label] = 255
+    monkeypatch.setattr(mnist, 'load_dataset', lambda *args, **kwargs: (images, labels, images, labels))
+    result = mnist.study(dataset='digits-proxy', smoke=True, data_seeds=[42], measurement_seeds=[101, 202],
+        shot_budgets=[256, 512], gate_shot_budgets=[256], validation_per_class=1, test_per_class=1,
+        damping_values=(), image_batch_size=10, jobs=4, cpu_budget=4, output_dir=tmp_path / 'protocol')
+    assert result['status'] == 'DONE' and result['test_evaluated']
+    assert [row['stage'] for row in result['stages']] == ['convergence', 'memory-2', 'memory-3', 'encoding-damping']
+    assert all(row['accuracy'] == 1 for row in result['test_summary'])
+    freeze = json.loads((tmp_path / 'protocol/frozen-configuration.json').read_text())
+    assert freeze['selection_mode'] == 'equal_shot' and not freeze['selection_used_test_labels']
+    assert result['test_results'][0]['test_indices'] == freeze['splits']['42']['fresh_test']
 
 
 def test_altered_freeze_is_rejected_before_test_loading(tmp_path):

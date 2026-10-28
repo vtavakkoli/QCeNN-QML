@@ -7,6 +7,7 @@ not a claim of quantum neural-weight training or a fully quantum host pipeline.
 import numpy as np
 
 from .quantum import amplitude_preparation
+from .resources import execution_progress
 
 
 def load_basis(circuit, qubits, value):
@@ -160,6 +161,11 @@ def _aer_result(native,shots,seed,readout_error,threads,*,memory=False):
     from qiskit_aer.noise import NoiseModel, ReadoutError
     from time import perf_counter
     from concurrent.futures import TimeoutError as FutureTimeout
+    from .measurement_sampling import MarginalResult, full_readout, readout_policy
+    from .gpu_dispatch import try_execute
+    accelerated = try_execute(native, shots, seed, readout_error, memory)
+    if accelerated is not None:
+        return accelerated
     noise = None
     if readout_error and (native[0].metadata or {}).get('output_qubits'):
         noise = NoiseModel()
@@ -170,16 +176,19 @@ def _aer_result(native,shots,seed,readout_error,threads,*,memory=False):
     # thread pool. Never nest both pools or exceed the worker's CPU budget.
     parallel=min(threads,len(native))
     mps_threads=threads if parallel==1 else 1
+    fast = readout_policy()
+    transformed = [full_readout(c) for c in native] if fast else [(c, None) for c in native]
+    executed, mappings = zip(*transformed, strict=True)
+    algorithm = 'mps_probabilities' if fast else 'mps_apply_measure'
     backend = AerSimulator(method="matrix_product_state", max_parallel_threads=threads,
         max_parallel_experiments=parallel, max_parallel_shots=1, mps_omp_threads=mps_threads,
         matrix_product_state_truncation_threshold=1e-20, noise_model=noise,
-        # Direct MPS sampling avoids constructing a large probability vector
-        # for wide coherent memories, even when few classical bits are read.
-        mps_sample_measure_algorithm="mps_apply_measure")
+        mps_sample_measure_algorithm=algorithm)
     print(f'Aer sampling: circuits={len(native)} qubits={max(c.num_qubits for c in native)} '
         f'shots={shots} CPU-thread-budget={threads} parallel-circuits={parallel}',flush=True)
     started=perf_counter()
-    job=backend.run(native,shots=shots,seed_simulator=seed,memory=memory)
+    execution_progress('cpu_sampling', shots=shots, circuits=len(native), backend='CPU/MPS', sampler=algorithm)
+    job=backend.run(list(executed),shots=shots,seed_simulator=seed,memory=memory)
     while True:
         try:
             result=job.result(timeout=30)
@@ -189,12 +198,21 @@ def _aer_result(native,shots,seed,readout_error,threads,*,memory=False):
                 'no shot-progress estimate available',flush=True)
     if not result.success:
         raise RuntimeError(str(result.status))
+    result.qcenn_backend = {'device': 'CPU', 'method': 'matrix_product_state'}
+    if fast:
+        marginal = MarginalResult(result, native, executed, mappings, seed, shots, memory)
+        marginal.qcenn_backend = result.qcenn_backend
+        return marginal
+    result.qcenn_readout = {'instrument': 'original_partial_readout',
+        'mps_sampling_algorithm': algorithm, 'execution_depth_max': max(c.depth() for c in native),
+        'physical_measurements_per_shot': [sum(i.operation.name == 'measure' for i in c.data) for c in native]}
     return result
 
 
 def _compile_components(circuit,seed):
     """Prevent MCX synthesis borrowing dirty ancillas from unrelated blocks."""
     from qiskit import transpile
+    execution_progress('compiling', logical_qubits=circuit.num_qubits)
     options=dict(basis_gates=['rz','sx','x','cx','reset'],
         optimization_level=1,seed_transpiler=seed,num_processes=1)
     parts=independent_components(circuit)
@@ -237,8 +255,11 @@ def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
     compile_seconds = perf_counter()-start
     start = perf_counter()
     components=[independent_components(c) for c in native]
+    readouts=[]; backends=[]
     if all(len(parts)==1 for parts in components):
         result=_aer_result(native,shots,seed,readout_error,threads)
+        readouts.append(getattr(result, 'qcenn_readout', {'instrument':'original_partial_readout','mps_sampling_algorithm':'mps_apply_measure'}))
+        backends.append(getattr(result, 'qcenn_backend', {'device':'CPU', 'method':'matrix_product_state'}))
         counts=[result.get_counts(i) for i in range(len(native))]
     else:
         counts=[]
@@ -249,21 +270,28 @@ def execute(circuits, shots, seed=42, readout_error=0., precompiled=False):
             for component,part in enumerate(parts):
                 component_seed=int(np.random.SeedSequence([seed,index,component]).generate_state(1)[0])
                 result=_aer_result([part],shots,component_seed,readout_error,threads,memory=True)
+                readouts.append(getattr(result, 'qcenn_readout', {'instrument':'original_partial_readout','mps_sampling_algorithm':'mps_apply_measure'}))
+                backends.append(getattr(result, 'qcenn_backend', {'device':'CPU', 'method':'matrix_product_state'}))
                 for shot,bits in enumerate(result.get_memory(0)):
                     joint[shot] |= int(bits.replace(' ',''),2)
             counts.append(dict(Counter(format(value,f'0{circuit.num_clbits}b') for value in joint)))
     if any(sum(c.values()) != shots for c in counts):
         raise RuntimeError("Missing measured shots")
     factorized=any(len(parts)>1 for parts in components)
+    execution_progress('measured', measured_shots=shots*len(native))
     parallel=1 if factorized else min(threads,len(native))
     return counts, native, {"compilation_seconds": compile_seconds,
         "cpu_thread_budget":threads,"mps_omp_threads":threads if parallel==1 else 1,
-        "parallel_experiments":parallel,"parallel_shots":1,"device":"CPU",
+        "parallel_experiments":parallel,"parallel_shots":1,
+        "device": backends[0]['device'] if len({b['device'] for b in backends}) == 1 else 'MIXED',
+        "backends_used": backends,
         "simulation_component_qubits":[[p.num_qubits for p in parts] for parts in components],
         "tensor_product_sampling":factorized,
         "simulated_component_shots":shots*sum(len(parts) for parts in components),
         "mps_truncation_threshold":1e-20,
-        "mps_sampling_algorithm":"mps_apply_measure",
+        "mps_sampling_algorithm":readouts[0]['mps_sampling_algorithm'],
+        "readout_instruments":readouts,
+        "physical_measurements_total":sum(sum(r.get('physical_measurements_per_shot',[]))*shots for r in readouts),
         "sampling_seconds": perf_counter()-start, "total_shots": shots*len(native),
         "qubits_max": max(c.num_qubits for c in native),
         "depth_max": max(c.depth() for c in native),

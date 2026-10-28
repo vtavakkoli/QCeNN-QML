@@ -41,6 +41,20 @@ python -m pip install -e ".[mnist,test]"
 
 ## Staged studies and separate experiment ZIPs
 
+For v0.5 environment setup, the shared CPU pool, qualified GPU workers and
+broader natural-text comparisons:
+
+```bash
+nohup bash -c 'exec bash scripts/update_and_run_research.sh' \
+  > accelerated-research.log 2>&1 < /dev/null &
+```
+
+This creates immutable source and separate environments, upgrades Aer to the
+tested 0.18.2 sampler, runs the tests and launches fresh studies. With an old
+run active, use `--replace-run results/EXACT_OLD_DIRECTORY`. Existing results and
+the original venv are preserved. Full instructions, stop/resume commands and
+limits: [ACCELERATED_RUNS.md](docs/ACCELERATED_RUNS.md).
+
 Inspect the actual execution machine/allocation before tuning parallelism:
 
 ```bash
@@ -58,10 +72,10 @@ nohup bash -c 'exec bash scripts/run_research_studies.sh' \
 bash scripts/run_research_studies.sh --status
 ```
 
-This runs MNIST, diffusion and the coherent block concurrently within the CPU
-affinity/cgroup budget. `QCENN_CPUS=10 QCENN_JOBS=3` selects a ten-CPU budget
-and three concurrent tracks. MNIST/diffusion parallelize independent jobs inside
-their shares. The fit gate precedes validation; frozen selection precedes test.
+This runs the tracks concurrently within one shared affinity/cgroup/memory-aware
+pool. `QCENN_CPUS=10 QCENN_JOBS=10` selects at most ten one-thread quantum workers
+across all tracks. Independent images/text batches release their slots for other
+tracks as they finish. The fit gate precedes validation; frozen selection precedes test.
 Each track gets a separate native ZIP/checksum, log and explicit completion state.
 Select one with `--study-only mnist`, `diffusion` or `transformer`.
 `--smoke` uses the digits proxy and small text budgets. Exit 2 means a scientific
