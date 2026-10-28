@@ -160,10 +160,12 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     # Explicit jobs may lower concurrency, never override the memory estimate.
     jobs = min(jobs, memory_cap)
     text_corpus = Path(text_corpus_file or Path(__file__).parent / 'assets/quantum-sequence.txt').resolve()
+    data_root = str(Path(os.environ.get('QCENN_DATA_ROOT', 'data')).resolve())
+    diffusion_examples = int(os.environ.get('QCENN_DIFFUSION_EXAMPLES', '256')) if corpus_files and not smoke else None
     configuration = {'smoke': smoke, 'only': only, 'corpus_files': [str(Path(p).resolve()) for p in corpus_files] if corpus_files else None,
         'runner_schema': 1, 'selection_mode': 'equal_shot', 'image_batch_size': 1, 'case_batch_size': 1,
         'text_corpus_file': str(text_corpus), 'text_corpus_sha256': hashlib.sha256(text_corpus.read_bytes()).hexdigest(),
-        'text_new_tokens': text_new_tokens}
+        'text_new_tokens': text_new_tokens, 'data_root': data_root, 'diffusion_examples': diffusion_examples}
     manifest = initialize(root, configuration, provenance(), resume)
     for name in ('experiments', 'logs', 'status', 'commands', 'archives'):
         (root / name).mkdir(exist_ok=True)
@@ -184,6 +186,7 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
         'thread_environment': thread_environment(1), 'configuration': configuration,
         'source': manifest['source'], 'source_root': str(Path(__file__).resolve().parents[2]),
         'gpu_profile_path': os.environ.get('QCENN_GPU_PROFILE'),
+        'data_root': data_root,
         'started_at': time.time(), 'resumed': resume,
         'execution_policy': manifest['execution_policy']}
     write_json(root / 'runtime.json', runtime)
@@ -197,12 +200,12 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     if only in ('all', 'mnist'):
         long_jobs.append(_job('mnist-study', 'qcenn_qml.mnist_study', root,
             [*common, *small, '--image-batch-size', '1', '--selection-mode', 'equal_shot',
-             '--data-root', os.environ.get('QCENN_DATA_ROOT', 'data')]))
+             '--data-root', data_root]))
     if only in ('all', 'diffusion'):
         extra = ['--corpus-files', *configuration['corpus_files']] if configuration['corpus_files'] else []
         # Natural-text profiles use an explicit larger sample. Structured smoke
         # and the earlier three diagnostic corpora retain all-window evaluation.
-        broad = ['--examples', os.environ.get('QCENN_DIFFUSION_EXAMPLES', '256')] if corpus_files and not smoke else []
+        broad = ['--examples', str(diffusion_examples)] if diffusion_examples is not None else []
         long_jobs.append(_job('diffusion-study', 'qcenn_qml.diffusion.study', root,
             [*common, *small, *extra, *broad, '--case-batch-size', '1']))
     if only in ('all', 'transformer'):
@@ -460,6 +463,9 @@ def main(argv=None):
     if options.resume:
         root = resolve_output(path)
         previous = json.loads((root / 'study-manifest.json').read_text())['configuration']
+        os.environ.setdefault('QCENN_DATA_ROOT', previous['data_root'])
+        if previous.get('diffusion_examples') is not None:
+            os.environ.setdefault('QCENN_DIFFUSION_EXAMPLES', str(previous['diffusion_examples']))
         saved_runtime = json.loads((root / 'runtime.json').read_text())
         saved_policy = saved_runtime['execution_policy']
         for env_key, policy_key in [('QCENN_MPS_READOUT', 'mps_readout'),

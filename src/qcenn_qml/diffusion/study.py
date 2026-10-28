@@ -14,7 +14,7 @@ import numpy as np
 
 from ..coherent import CORE_DISCLOSURE
 from ..recurrent_mnist import provenance, write_json
-from ..study_utils import cluster_interval, initialize, run_tasks
+from ..study_utils import cluster_interval, digest, initialize, run_tasks
 from ..resources import single_writer
 
 
@@ -118,7 +118,7 @@ def study(corpus_files=None, data_seeds=(42, 43, 44), measurement_seeds=(101, 20
                     'configuration': {'seed': task['data_seed'], 'max_train_records': max_train_records,
                         'max_vocabulary': max_vocabulary, 'corpus_sha256': task['corpus_sha256']}}
                 if cache.exists():
-                    if json.loads(cache.read_text()) != payload:
+                    if digest(json.loads(cache.read_text())) != digest(payload):
                         raise ValueError('Prepared corpus cache changed on resume')
                 else:
                     write_json(cache, payload)

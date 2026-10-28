@@ -131,3 +131,21 @@ def test_leftover_writer_filename_does_not_lock_a_finished_directory(tmp_path):
                 pass
     with exclusive_directory(root):
         pass
+
+
+def test_runner_resume_restores_data_root_and_reuses_measured_counts(tmp_path):
+    import hashlib
+    root = tmp_path / 'protocol'
+    base_env = {**os.environ, **thread_environment(1), 'QCENN_LATEST_FILE': str(tmp_path / 'latest.txt')}
+    base_env.pop('QCENN_DATA_ROOT', None)
+    command = [sys.executable, '-m', 'qcenn_qml.research_runner', '--study-only', 'mnist',
+        '--output-dir', str(root), '--cpus', '2', '--jobs', '2', '--memory-per-worker-gib', '.25']
+    first = subprocess.run([*command, '--smoke'], env={**base_env, 'QCENN_DATA_ROOT': str(tmp_path / 'explicit-cache')},
+        capture_output=True, text=True, timeout=120)
+    assert first.returncode in (0, 2), first.stdout + first.stderr
+    measured = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.glob('experiments/mnist-study/**/image-*.json')}
+    assert measured
+    restored = subprocess.run([*command, '--resume'], env=base_env, capture_output=True, text=True, timeout=60)
+    assert restored.returncode == first.returncode, restored.stdout + restored.stderr
+    assert all(hashlib.sha256(p.read_bytes()).hexdigest() == value for p, value in measured.items())
+    assert json.loads((root / 'runtime.json').read_text())['data_root'] == str(tmp_path / 'explicit-cache')
