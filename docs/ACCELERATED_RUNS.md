@@ -33,6 +33,10 @@ test suite, tries GPU qualification, prepares text snapshots, then starts a new
 output directory. It does not upgrade system Python, drivers or the live venv.
 GPU setup/qualification failures are logged and leave CPU execution available.
 The CPU and GPU Aer wheels are never overlaid in one environment.
+GPU package commands and the transport interpreter use Python isolated mode
+(`-I`) so CPU-project metadata on `PYTHONPATH` cannot contaminate GPU checks.
+Creation, installation, dependency-check and freeze failures all retain CPU fallback;
+dependency-check output is saved in `gpu-check.log`.
 
 ```bash
 bash "$qcenn_updater" --status
