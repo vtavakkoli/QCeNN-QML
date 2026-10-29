@@ -176,22 +176,24 @@ if [[ $qcenn_gpu != off ]] && command -v nvidia-smi >/dev/null && nvidia-smi -L 
   qcenn_gpu_python="$qcenn_worktree/.venv-qcenn-gpu/bin/python"
   if [[ ! -f $qcenn_config/gpu-ready.txt ]]; then
     qcenn_setup_state GPU_INSTALL "Trying the separate CUDA 12 Aer environment; log=$qcenn_config/gpu-install.log"
-    "$qcenn_base_python" -m venv "$qcenn_worktree/.venv-qcenn-gpu"
-    if timeout 1800 "$qcenn_gpu_python" -m pip install 'qiskit==2.6.1' 'qiskit-aer-gpu==0.18.2' > "$qcenn_config/gpu-install.log" 2>&1; then
-      "$qcenn_gpu_python" -m pip check
-      "$qcenn_gpu_python" -m pip freeze > "$qcenn_config/gpu-requirements.txt"
+    # -I excludes the CPU project's PYTHONPATH/editable metadata. The GPU
+    # environment intentionally contains the GPU Aer wheel, not qcenn-qml.
+    if "$qcenn_base_python" -m venv "$qcenn_worktree/.venv-qcenn-gpu" &&
+        timeout 1800 "$qcenn_gpu_python" -I -m pip install 'qiskit==2.6.1' 'qiskit-aer-gpu==0.18.2' > "$qcenn_config/gpu-install.log" 2>&1 &&
+        "$qcenn_gpu_python" -I -m pip check > "$qcenn_config/gpu-check.log" 2>&1 &&
+        "$qcenn_gpu_python" -I -m pip freeze > "$qcenn_config/gpu-requirements.txt"; then
       printf '%s\n' "$qcenn_revision" > "$qcenn_config/gpu-ready.txt"
     else
-      printf 'GPU SETUP UNAVAILABLE; continuing with the accelerated CPU sampler. Details: %s\n' "$qcenn_config/gpu-install.log"
+      printf 'GPU SETUP UNAVAILABLE; continuing with the accelerated CPU sampler. Logs: %s and %s\n' "$qcenn_config/gpu-install.log" "$qcenn_config/gpu-check.log"
     fi
   fi
   if [[ -f $qcenn_config/gpu-ready.txt ]]; then
     qcenn_setup_state GPU_QUALIFICATION "Checking device methods and measured native circuits; log=$qcenn_config/gpu-validation.log"
-    qcenn_gpu_libs=$("$qcenn_gpu_python" -c 'import os,sysconfig; from pathlib import Path; p=Path(sysconfig.get_paths()["purelib"]); print(os.pathsep.join(str(x) for x in [*p.glob("nvidia/*/lib"),*p.glob("cuquantum/lib")] if x.is_dir()))')
+    qcenn_gpu_libs=$("$qcenn_gpu_python" -I -c 'import os,sysconfig; from pathlib import Path; p=Path(sysconfig.get_paths()["purelib"]); print(os.pathsep.join(str(x) for x in [*p.glob("nvidia/*/lib"),*p.glob("cuquantum/lib")] if x.is_dir()))')
     mapfile -t qcenn_gpu_launch_info < <("$qcenn_python" - "$qcenn_gpu_python" "$qcenn_gpu_libs:${LD_LIBRARY_PATH:-}" "$qcenn_config" <<'PY'
 import hashlib,shlex,sys
 from pathlib import Path
-body='#!/usr/bin/env bash\nexport LD_LIBRARY_PATH='+shlex.quote(sys.argv[2])+'\nexec '+shlex.quote(sys.argv[1])+' "$@"\n'
+body='#!/usr/bin/env bash\nexport LD_LIBRARY_PATH='+shlex.quote(sys.argv[2])+'\nexec '+shlex.quote(sys.argv[1])+' -I "$@"\n'
 path=Path(sys.argv[3])/('gpu-python-'+hashlib.sha256(body.encode()).hexdigest()[:16])
 if path.exists() and path.read_text()!=body:
  raise ValueError('GPU launcher changed')
