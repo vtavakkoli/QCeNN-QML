@@ -68,6 +68,12 @@ fi
 if [[ -n $qcenn_action_output ]]; then
   qcenn_action_output=$("$qcenn_base_python" -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "$qcenn_action_output")
 elif [[ $qcenn_action == status || $qcenn_action == resume || $qcenn_action == stop ]]; then
+  if [[ ! -s results/research-studies-latest.txt ]]; then
+    printf 'State: NO_RUN_REGISTERED\nNo experiment output has been registered. Setup may still be in preflight or may have exited; inspect the launcher log.\n'
+    if [[ $qcenn_action == status ]]; then exit 0; fi
+    printf 'Resume/stop requires an explicit existing output directory.\n' >&2
+    exit 1
+  fi
   qcenn_action_output=$(cat results/research-studies-latest.txt)
 fi
 if [[ $qcenn_action == status ]]; then
@@ -109,8 +115,10 @@ done
 git fetch origin main
 qcenn_revision=$(git rev-parse "$qcenn_ref^{commit}")
 qcenn_worktree="$(dirname -- "$qcenn_repo")/QCeNN-QML-accelerated-${qcenn_revision:0:12}"
-if [[ ! -d $qcenn_worktree ]]; then
-  git worktree add --detach "$qcenn_worktree" "$qcenn_revision"
+if [[ ! -e $qcenn_worktree && ! -L $qcenn_worktree ]]; then
+  # Recover only this absent checkout if Git retains its registration. One
+  # --force still refuses a locked worktree; never prune other registrations.
+  git worktree add --force --detach "$qcenn_worktree" "$qcenn_revision"
 fi
 [[ $(git -C "$qcenn_worktree" rev-parse HEAD) == "$qcenn_revision" ]] &&
   git -C "$qcenn_worktree" diff --quiet HEAD -- || { printf 'Worktree changed; refusing to update an active source snapshot.\n' >&2; exit 1; }

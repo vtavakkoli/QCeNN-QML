@@ -38,6 +38,12 @@ GPU package commands and the transport interpreter use Python isolated mode
 Creation, installation, dependency-check and freeze failures all retain CPU fallback;
 dependency-check output is saved in `gpu-check.log`.
 
+If an immutable checkout was deleted but Git retains its worktree registration,
+the updater recreates only that absent checkout with one `git worktree add
+--force --detach`. Locked registrations, existing edited checkouts and symlinks
+are not overwritten, and unrelated worktrees are not pruned. Environments inside
+the deleted checkout must be rebuilt; original-project results remain untouched.
+
 ```bash
 bash "$qcenn_updater" --status
 bash "$qcenn_updater" --stop results/NEW_OUTPUT_DIRECTORY
@@ -99,6 +105,7 @@ GPU availability alone is not a speedup claim.
 
 | State | Meaning |
 |---|---|
+| `NO_RUN_REGISTERED` | No experiment output is registered yet; inspect the launcher log for preflight progress or failure. |
 | `RUNNING` | Coordinators/tasks/archives are still active. |
 | `DONE` | Requested reports and measurements completed; every ZIP passed CRC and has SHA256. |
 | `DONE_WITH_BLOCKED_TESTS` | Execution finished, but MNIST fit/stability gates prevented test evaluation. |
