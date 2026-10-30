@@ -130,7 +130,7 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
         lines += ['## Complete small quantum transformer replacement', '',
             f"- Status: {x.get('status')}; measured checks: {len(x.get('cases', []))}.",
             '- Quantum embedding, one/two complete fixed-point blocks and vocabulary argmax.',
-            '- All 16 input pairs tested in superposition; phase interference and hybrid-host generation checked separately.',
+            '- All 16 input pairs tested in coherent groups; phase interference and hybrid-host generation checked separately.',
             '- Four-token toy vocabulary and fixed weights; full pretrained Smol remains unimplemented.', '']
     if missing:lines+=["## Requested reports that are missing",""]+["- "+p for p in missing]+[""]
     lines+=["## Conclusion","",

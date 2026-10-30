@@ -59,8 +59,14 @@ layers. Width is 249 qubits for one block and 261 for two; neither is sent to a
 dense statevector backend. All block operators execute: RMSNorm, QKV, RoPE,
 causal softmax, weighted values, output projection, residuals and SwiGLU.
 
-Tests require all 16 input pairs to appear in a uniform-superposition readout,
-with correct outputs and clean workspace, across independent measurement seeds.
+Tests require all 16 input pairs across independently scheduled two-branch
+coherent groups, with correct outputs and clean workspace, across independent
+measurement seeds. Coverage must contain every input exactly once per layer/seed.
+Small groups bound simulation entanglement and expose more parallel work. Their
+additional circuit executions and shots are fully charged. The one-block smoke
+retains the already qualified 16-branch diagnostic; use --coherent-batch-size 16
+explicitly for that expensive full diagnostic. Direct runs also cap workers by
+available RAM using the same 4 GiB estimate as the shared runner.
 Separate functional phase-kickback/inversion tests verify relative coherence.
 Native QPY, measured counts, instrument audits and resources are retained.
 

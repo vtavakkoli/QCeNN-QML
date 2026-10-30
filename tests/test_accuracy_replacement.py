@@ -166,6 +166,48 @@ def test_two_complete_quantum_blocks_embedding_and_head_match_reference():
     assert resources['qubits_max'] == 261
 
 
+def test_pairwise_coherent_forward_preserves_both_branches_and_workspace():
+    from qcenn_qml.coherent import execute
+    from qcenn_qml.transformer_replacement import forward_circuit, pack_tokens, reference_forward
+    pairs = [[0, 0], [1, 0]]
+    circuit = forward_circuit(pairs[0], layers=1, superposition=pairs[1])
+    counts, _, _ = execute([circuit], 16, 101)
+    expected = {pack_tokens(p): pack_tokens(reference_forward(p, 1)) for p in pairs}
+    seen = set()
+    for bits in counts[0]:
+        code = int(bits.replace(' ', ''), 2)
+        assert code >> 8 == 0 and (code >> 4) & 15 == expected[code & 15]
+        seen.add(code & 15)
+    assert seen == set(expected)
+
+
+@pytest.mark.parametrize('omit_batch', [False, True])
+def test_coherent_batches_require_complete_nonduplicated_input_coverage(monkeypatch, tmp_path, omit_batch):
+    from qcenn_qml import transformer_replacement as model
+    monkeypatch.setattr(model, 'detect_resources', lambda: {'available_memory_bytes': 8*1024**3})
+    def measured(function, tasks, **kwargs):
+        assert kwargs['jobs'] == 1  # Respect RAM even when CPU jobs are explicit.
+        rows = []
+        for task in tasks:
+            if omit_batch and task.get('input_codes') == [14, 15]:
+                continue
+            rows.append({'kind': task['kind'], 'layers': task['layers'], 'measurement_seed': task['measurement_seed'],
+                'passed': True, 'observed_input_codes': task.get('input_codes', [])})
+        return rows
+    monkeypatch.setattr(model, 'run_tasks', measured)
+    args = {'layers': [2], 'measurement_seeds': [101], 'shots': 256,
+        'jobs': 3, 'cpu_budget': 3, 'output_dir': tmp_path / 'study'}
+    if omit_batch:
+        with pytest.raises(RuntimeError, match='failed'):
+            model.study(**args)
+        report = json.loads((args['output_dir'] / 'report.json').read_text())
+        assert report['status'] == 'FAILED_REFERENCE_CHECK'
+    else:
+        report = model.study(**args)
+        assert report['status'] == 'VERIFIED' and len(report['cases']) == 10
+        assert report['coverage'][0]['complete_exactly_once']
+
+
 def test_diffusion_is_rejected_by_active_runner_before_any_output(tmp_path):
     from qcenn_qml.research_runner import run
     with pytest.raises(ValueError, match='retired'):
