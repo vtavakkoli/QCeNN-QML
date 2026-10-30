@@ -46,9 +46,9 @@ def probe(output):
         circuit.h(0); circuit.cx(0, 1); circuit.measure(range(2), range(2))
         for device in range(count):
             try:
-                result = AerSimulator(method='statevector', device='GPU', target_gpus=[device],
+                result = AerSimulator(method='statevector', device='GPU',
                     max_parallel_threads=1, max_parallel_experiments=1, max_parallel_shots=1).run(
-                        circuit, shots=128, seed_simulator=42).result()
+                        circuit, shots=128, seed_simulator=42, target_gpus=[device]).result()
                 counts = result.get_counts()
                 if not result.success or sum(counts.values()) != 128 or set(counts) != {'00', '11'}:
                     raise RuntimeError('GPU Bell readout failed')
@@ -60,9 +60,9 @@ def probe(output):
             answer['verified_methods'].append('statevector')
             if 'tensor_network' in answer['methods']:
                 try:
-                    result = AerSimulator(method='tensor_network', device='GPU',
-                        target_gpus=[answer['verified_gpu_ids'][0]], max_parallel_threads=1).run(
-                            circuit, shots=128, seed_simulator=42).result()
+                    result = AerSimulator(method='tensor_network', device='GPU', max_parallel_threads=1).run(
+                            circuit, shots=128, seed_simulator=42,
+                            target_gpus=[answer['verified_gpu_ids'][0]]).result()
                     if result.success and sum(result.get_counts().values()) == 128:
                         answer['verified_methods'].append('tensor_network')
                 except Exception as error:
@@ -89,12 +89,12 @@ def execute(request_file):
         error = request['readout_error']
         for qubit in request['output_qubits']:
             noise.add_readout_error(ReadoutError([[1-error, error], [error, 1-error]]), [qubit])
-    backend = AerSimulator(method=request['method'], device='GPU', target_gpus=[request['gpu_id']],
+    backend = AerSimulator(method=request['method'], device='GPU',
         max_parallel_threads=1, max_parallel_experiments=1, max_parallel_shots=1,
         max_memory_mb=request['memory_limit_mb'], noise_model=noise)
     start = time.perf_counter()
     result = backend.run(native, shots=request['shots'], seed_simulator=request['seed'],
-                         memory=request['memory']).result()
+                         memory=request['memory'], target_gpus=[request['gpu_id']]).result()
     if not result.success:
         raise RuntimeError(str(result.status))
     counts = [dict(result.get_counts(i)) for i in range(len(native))]

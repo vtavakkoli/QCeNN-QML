@@ -2,10 +2,13 @@
 
 ## Absolute constraints
 
-- Version 0.5 defaults follow the user's no-hybrid MODEL-CORE requirement: no CPU optimizer, fitted CPU inference weights, or intermediate classical hidden-state/token updates. Classical input encoding, gate compilation, simulator execution and final counting remain and MUST be disclosed. Never describe the entire host pipeline as purely quantum.
+- v0.6 accuracy research adds fixed label-independent image centering/deskew, measured nearest-record readout and balanced raw-record banks beyond 32 total records. Equal bank sizes/shot counts preserve the prior. Record rankings must use measured counts, never CPU distances. 100% fresh-test accuracy is a target, never a guaranteed result or a reason to tune on test labels.
+- The complete small replacement test includes quantum embeddings, one/two full three-bit blocks and a quantum four-token vocabulary argmax, with exhaustive 16-input-pair coverage, interference checks and workspace auditing. It is not pretrained Smol. A separately labeled hybrid autoregressive HOST may update token IDs between measured full-model calls, as explicitly requested; no classical attention or MLP may substitute for the quantum forward.
+
+- Version 0.6 defaults follow the user's no-hybrid MODEL-CORE requirement: no CPU optimizer, fitted CPU inference weights, or intermediate classical hidden-state/token updates. Classical input encoding, gate compilation, simulator execution and final counting remain and MUST be disclosed. Never describe the entire host pipeline as purely quantum.
 - The accelerated runner uses OS-released CPU/GPU leases, immutable source/runtime manifests, independent image/window shards and bounded retries/timeouts. DONE requires complete requested reports plus native ZIP CRC/SHA256 receipts. Never turn a blocked scientific gate or a missing report into successful benchmark completion. Stop only verified identities belonging to the requested run tree; no broad process-name kills.
 - Fast full-register MPS readout is enabled only for the inspected/tested Aer 0.18.2 implementation and marginalized to the original model bits. Preserve all native gates, actual shots, extra measurement costs and first-query full-instrument audits. GPU wheels belong in a separate environment, are qualified with actual native-circuit/noise tests and have explicit width/VRAM limits. Never allocate a dense statevector for the 241-qubit block.
-- MNIST v0.5 selects eligible equal-shot validation configurations by default; matched-CNOT stability/eligibility remains an independently reported resource comparison. Do not lower the 100% fit or 0.95 stability gates. Both budget curves, validation-only selection, frozen testing and declared prior-test exclusions remain mandatory.
+- MNIST v0.6 selects eligible equal-shot validation configurations by default; matched-CNOT stability/eligibility remains an independently reported resource comparison. Do not lower the 100% fit or 0.95 stability gates. Both budget curves, validation-only selection, frozen testing and declared prior-test exclusions remain mandatory.
 - New default MNIST/text/diffusion models are nonparametric raw-record quantum memories. They do NOT implement quantum neural-weight training. Do not relabel exemplar retrieval or raw corpus loading as training the old neural model or transferring Smol weights.
 - Retain old experiments only as explicitly named legacy references: recurrent `--legacy-hybrid`, text `--legacy-classical-memory`, diffusion `--legacy-count-table`. Never execute the old CPU optimizer implicitly. Default overlap comparisons use k=0; k=1 requires an explicit experimental request.
 - Quantum attention currently verifies signed ternary dot products and postselected softmax/value sampling. It is not a full-precision coherent transformer block. The full Smol feasibility audit must keep missing operators, loading/compilation/readout costs and the absence of actual pretrained-weight execution explicit.
@@ -46,9 +49,10 @@
 Use Python modules, not a notebook-only implementation. Keep CLI entry points stable, seeded and reproducible, with JSON reports and pinned/tested dependency ranges. Do not implement an unnecessary framework or make smoke tests silently appear to be scientific results. Preserve source provenance, dataset identity and license requirements.
 
 
-## Quantum masked diffusion track
+## Retired quantum masked diffusion track
 
-- Use src/qcenn_qml/diffusion/ and docs/QUANTUM_DIFFUSION.md as the new toy
+- Diffusion is retired from active launchers, dataset preparation and CI benchmark runs at the user's request. Preserve historical code/results for reproducibility only.
+- Historical src/qcenn_qml/diffusion/ and docs/QUANTUM_DIFFUSION.md describe the toy
   quantum denoising baseline. It uses 3-token sequences and controlled
   replacement channels with ancilla resets.
 - The LEGACY toy corpus is counted classically and quantum-controlled amplitude

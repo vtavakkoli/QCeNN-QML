@@ -13,7 +13,7 @@ import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
 RUNNER=ROOT/'scripts/run_quantum_corrections.sh'
-NAMES=('mnist-42','mnist-43','mnist-44','diffusion','attention','text','smol-audit','summary')
+NAMES=('mnist-42','mnist-43','mnist-44','attention','text','smol-audit','summary')
 
 
 @pytest.fixture
@@ -95,7 +95,8 @@ def test_blocked_fit_gate_is_not_reported_as_success(tmp_path,fake_python):
     assert (output/'DONE_WITH_BLOCKED_TESTS').exists()
     with zipfile.ZipFile(output/'archives/mnist-42.zip') as z:
         assert z.read('status/mnist-42.tsv').startswith(b'GATE_FAILED\t2')
-    assert (output/'archives/diffusion.zip').exists()
+    assert (output/'archives/text.zip').exists()
+    assert not (output/'experiments/diffusion').exists()
 
 
 def test_attention_audit_does_not_wait_for_slow_text(tmp_path,fake_python):
@@ -121,26 +122,25 @@ def test_studies_use_allocated_worker_budgets_and_separate_archives(tmp_path,fak
     result=subprocess.run(['bash',str(RUNNER),'--studies','--smoke',str(output)],
         env=environment(fake_python,QCENN_JOBS='3'),capture_output=True,text=True,timeout=30)
     assert result.returncode==0,result.stdout+result.stderr
-    names={'mnist-study','diffusion-study','transformer-block','smol-audit','summary'}
+    names={'mnist-study','transformer-block','smol-audit','summary'}
     assert {p.stem for p in (output/'archives').glob('*.zip')}==names
-    for name in ('mnist-study','diffusion-study'):
+    for name in ('mnist-study',):
         trace=json.loads((output/f'experiments/{name}/trace.json').read_text())
         assert trace['argv'][trace['argv'].index('--jobs')+1]==str(trace['threads'])
         assert trace['argv'][trace['argv'].index('--cpu-budget')+1]==str(trace['threads'])
     audit=json.loads((output/'experiments/smol-audit/trace.json').read_text())
     assert '--transformer-report' in audit['argv']
     summary=json.loads((output/'experiments/summary/trace.json').read_text())
-    assert all('--'+name in summary['argv'] for name in ('mnist-study','diffusion-study','transformer-block'))
+    assert all('--'+name in summary['argv'] for name in ('mnist-study','transformer-block'))
 
 
-def test_separate_diffusion_study_skips_mnist_and_audit(tmp_path,fake_python):
+def test_retired_diffusion_study_is_rejected_without_creating_output(tmp_path,fake_python):
     output=tmp_path/'diffusion-only'
     result=subprocess.run(['bash',str(ROOT/'scripts/run_research_studies.sh'),
         '--study-only','diffusion',str(output)],env=environment(fake_python,QCENN_JOBS='1'),
         capture_output=True,text=True,timeout=30)
-    assert result.returncode==0,result.stdout+result.stderr
-    assert {p.stem for p in (output/'archives').glob('*.zip')}=={'diffusion-study','summary'}
-    assert not (output/'logs/data-prepare.log').exists()
+    assert result.returncode != 0
+    assert not output.exists()
 
 
 def test_failed_job_keeps_partial_output_and_other_experiments(tmp_path,fake_python):
@@ -153,15 +153,15 @@ def test_failed_job_keeps_partial_output_and_other_experiments(tmp_path,fake_pyt
         assert z.read('experiments/attention/partial.txt')==b'partial output'
     with zipfile.ZipFile(output/'archives/smol-audit.zip') as z:
         assert z.read('status/smol-audit.tsv').startswith(b'SKIPPED\t1')
-    assert (output/'archives/diffusion.zip').exists()
+    assert (output/'archives/text.zip').exists()
 
 
 def test_zero_exit_without_report_is_a_failed_experiment(tmp_path,fake_python):
-    output,process=run(tmp_path,fake_python,QCENN_TEST_MISSING='diffusion')
+    output,process=run(tmp_path,fake_python,QCENN_TEST_MISSING='text')
     assert process.returncode==1
     assert (output/'FAILED').exists()
-    assert (output/'status/diffusion.tsv').read_text().startswith('FAILED\t1')
-    assert 'expected report is missing' in (output/'logs/diffusion.log').read_text()
+    assert (output/'status/text.tsv').read_text().startswith('FAILED\t1')
+    assert 'expected report is missing' in (output/'logs/text.log').read_text()
 
 
 def test_termination_stops_active_children_and_records_interruption(tmp_path,fake_python):

@@ -1,3 +1,7 @@
+# Historical v0.5 staged protocol
+
+For current defaults use [ACCURACY_AND_REPLACEMENT.md](ACCURACY_AND_REPLACEMENT.md). Diffusion is retired and damping is disabled by default. The protocol below documents earlier archived studies.
+
 # Staged quantum studies (v0.5)
 
 QCeNN-QML — Vahid Tavakkoli (2026). See LICENSE and CITATION.cff.

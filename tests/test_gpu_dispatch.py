@@ -31,24 +31,25 @@ def test_hardware_native_memory_counts_noise_and_transport(monkeypatch, tmp_path
     monkeypatch.setenv('QCENN_GPU_FRACTION', '1')
     native = _compile_components(memory_circuit([.6, .8], [[1, 0], [0, 1], [1, 1], [1, 2]],
         [0, 1, 2, 3], rounds=2, value_bits=2), 42)
-    for method in profile['verified_methods']:
-        method_profile = tmp_path / (method + '.json')
-        method_profile.write_text(json.dumps({**profile, 'verified_methods': [method]}))
-        monkeypatch.setenv('QCENN_GPU_PROFILE', str(method_profile))
-        for error in (0., .1):
-            counts, _, resources = execute([native], 8192, 42, error, precompiled=True)
-            assert resources['device'] == 'GPU' and sum(counts[0].values()) == 8192
-            # Independent reference is evaluated AFTER execution, never used to
-            # build the model gates, quantum probabilities or readout samples.
-            measured = [native.find_bit(i.qubits[0]).index for i in native.data if i.operation.name == 'measure']
-            ideal = Statevector.from_instruction(native.remove_final_measurements(inplace=False)).probabilities(measured)
-            expected = np.zeros_like(ideal)
-            for before, probability in enumerate(ideal):
-                for flip in range(4):
-                    hamming = flip.bit_count()
-                    expected[before ^ flip] += probability * error**hamming * (1-error)**(2-hamming)
-            observed = np.zeros_like(ideal)
-            for bits, count in counts[0].items():
-                observed[int(bits.replace(' ', ''), 2)] += count / 8192
-            assert observed == pytest.approx(expected, abs=.025)
-            assert resources['cx_shot_weighted_total'] == 8192 * native.count_ops()['cx']
+    for gpu_id in profile['verified_gpu_ids']:
+        for method in profile['verified_methods']:
+            method_profile = tmp_path / (method + '.json')
+            method_profile.write_text(json.dumps({**profile, 'verified_gpu_ids': [gpu_id], 'verified_methods': [method]}))
+            monkeypatch.setenv('QCENN_GPU_PROFILE', str(method_profile))
+            for error in (0., .1):
+                counts, _, resources = execute([native], 8192, 42, error, precompiled=True)
+                assert resources['device'] == 'GPU' and sum(counts[0].values()) == 8192
+                # Independent reference is evaluated AFTER execution, never used to
+                # build the model gates, quantum probabilities or readout samples.
+                measured = [native.find_bit(i.qubits[0]).index for i in native.data if i.operation.name == 'measure']
+                ideal = Statevector.from_instruction(native.remove_final_measurements(inplace=False)).probabilities(measured)
+                expected = np.zeros_like(ideal)
+                for before, probability in enumerate(ideal):
+                    for flip in range(4):
+                        hamming = flip.bit_count()
+                        expected[before ^ flip] += probability * error**hamming * (1-error)**(2-hamming)
+                observed = np.zeros_like(ideal)
+                for bits, count in counts[0].items():
+                    observed[int(bits.replace(' ', ''), 2)] += count / 8192
+                assert observed == pytest.approx(expected, abs=.025)
+                assert resources['cx_shot_weighted_total'] == 8192 * native.count_ops()['cx']

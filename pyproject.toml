@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qcenn-qml"
-version = "0.5.0"
-description = "Resource-shared measured quantum studies with bounded execution and verified archives"
+version = "0.6.0"
+description = "Measured MNIST memory banks and complete small quantum transformer replacement studies"
 license = "LicenseRef-QCeNN-QML-NC-Commercial"
 license-files = ["LICENSE", "NOTICE.md"]
 requires-python = ">=3.10"

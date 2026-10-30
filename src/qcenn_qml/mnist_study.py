@@ -5,6 +5,7 @@ selection is experimental design, not fitted neural inference or optimization.
 """
 import argparse
 from collections import Counter, defaultdict
+import fcntl
 import hashlib
 import json
 from pathlib import Path
@@ -18,21 +19,31 @@ from .quantum_memory import memory_circuit
 from .recurrent_mnist import classification_metrics, patches_from_images, provenance, write_json
 from .study_utils import circuit_digest, cluster_interval, digest, execution_policy, independent_seed, initialize, run_tasks
 from .resources import single_writer
+from .mnist_memory import (NativeMemory, allocate_shots, compile_memory, decode_banks,
+    native_hash, preprocess)
 
 
 PREVIOUS_TESTS = Path(__file__).parent / 'assets' / 'evaluated-mnist-indices.json'
 
 
-def configuration(rounds=4, memory=1, encoding='amplitude', side=8, damping=0.):
-    return dict(rounds=int(rounds), memory=int(memory), encoding=encoding,
+def configuration(rounds=4, memory=1, encoding='amplitude', side=8, damping=0.,
+        preprocessing='none', readout='class_sum'):
+    result = dict(rounds=int(rounds), memory=int(memory), encoding=encoding,
         side=int(side), damping=float(damping))
+    if preprocessing != 'none':
+        result['preprocessing'] = preprocessing
+    if readout != 'class_sum':
+        result['readout'] = readout
+    return result
 
 
 def configuration_id(config):
-    return f'm{config["memory"]}-r{config["rounds"]}-{config["encoding"]}{config["side"]}-d{config["damping"]:g}'
+    suffix = ''.join('-'+config[key] for key in ('preprocessing', 'readout') if key in config)
+    return f'm{config["memory"]}-r{config["rounds"]}-{config["encoding"]}{config["side"]}-d{config["damping"]:g}'+suffix
 
 
-def make_splits(train_labels, test_labels, seeds, validation_per_class, test_per_class, exclusions):
+def make_splits(train_labels, test_labels, seeds, validation_per_class, test_per_class, exclusions,
+        memory_per_class=3):
     """Nested memory records, fixed validation, and mutually disjoint fresh tests."""
     reserved = set(map(int, exclusions))
     result = {}
@@ -41,10 +52,10 @@ def make_splits(train_labels, test_labels, seeds, validation_per_class, test_per
         train, validation, test = [], [], []
         for label in range(10):
             ids = rng.permutation(np.flatnonzero(train_labels == label))
-            if len(ids) < 3 + validation_per_class:
+            if len(ids) < memory_per_class + validation_per_class:
                 raise ValueError('Insufficient training/validation images')
-            train.extend(ids[:3].tolist())
-            validation.extend(ids[3:3 + validation_per_class].tolist())
+            train.extend(ids[:memory_per_class].tolist())
+            validation.extend(ids[memory_per_class:memory_per_class + validation_per_class].tolist())
             available = np.array([i for i in np.flatnonzero(test_labels == label) if int(i) not in reserved])
             if len(available) < test_per_class:
                 raise ValueError('Insufficient unused test images; lower --test-per-class or number of seeds')
@@ -72,34 +83,80 @@ def budget_shots(native_cx, anchor_cx, base_shots, mode):
 
 
 def _vectors(images, config):
-    values = patches_from_images(images, config['side']).reshape(len(images), -1) + 1e-8
+    values = patches_from_images(preprocess(images, config.get('preprocessing', 'none')),
+        config['side']).reshape(len(images), -1) + 1e-8
     return np.clip(values, 0, 1) if config['encoding'] == 'angle' else values
 
 
 def memory_indices(labels, memory, seed):
+    if memory < 1 or any(np.sum(labels == label) < memory for label in range(10)):
+        raise ValueError('Insufficient raw training records for the requested memory')
     selected = np.concatenate([np.flatnonzero(labels == label)[:memory] for label in range(10)])
     return np.random.default_rng(independent_seed(seed, memory, 910)).permutation(selected)
 
 
 def _native(query, keys, labels, config, seed):
-    return _compile_components(memory_circuit(query, keys, labels, rounds=config['rounds'],
-        encoding=config['encoding'], damping=config['damping'], max_qubits=128), seed)
+    return compile_memory(query, keys, labels, config, seed)
+
+
+def _native_for_task(query, keys, labels, config, seed, task, index):
+    """One locked compilation shared by independently scheduled measurements."""
+    if not task.get('measurement_shards'):
+        return _native(query, keys, labels, config, seed)
+    from qiskit import qpy
+    signature = digest({'prepared': task['prepared_data_sha256'], 'config': config,
+        'seed': seed, 'index': index, 'source': task['source_sha256']})
+    root = Path(task['prepared_data']).parent / 'native-cache' / signature
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / 'compile.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        path, receipt = root / 'native.qpy', root / 'receipt.json'
+        if receipt.exists():
+            saved = json.loads(receipt.read_text())
+            if saved['qpy_sha256'] != hashlib.sha256(path.read_bytes()).hexdigest():
+                raise ValueError('Shared native circuit archive changed')
+            with path.open('rb') as stream:
+                circuits = qpy.load(stream)
+            native = NativeMemory(circuits, saved['labels'], saved['readout']) if saved['banked'] else circuits[0]
+            if saved['native_sha256'] != native_hash(native):
+                raise ValueError('Shared native circuit identity changed')
+            return native
+        timer = perf_counter()
+        native = _native(query, keys, labels, config, seed)
+        with path.with_suffix('.tmp').open('wb') as stream:
+            qpy.dump(native.circuits if isinstance(native, NativeMemory) else native, stream)
+        path.with_suffix('.tmp').replace(path)
+        write_json(receipt, {'qpy_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'native_sha256': native_hash(native), 'signature': signature,
+            'banked': isinstance(native, NativeMemory),
+            'labels': native.labels if isinstance(native, NativeMemory) else None,
+            'readout': native.readout if isinstance(native, NativeMemory) else 'class_sum',
+            'compilation_seconds': perf_counter()-timer})
+        return native
 
 
 def _sample(native, shots, seed, path, rounds, truth, cx_budget=None):
-    native_hash = circuit_digest(native)
+    signature = native_hash(native)
     if path.exists():
         cached = json.loads(path.read_text())
-        expected = decode_postselection(cached['counts'], 4, rounds, 10)
-        if (cached.get('native_circuit_sha256') != native_hash or cached['measurement_seed'] != seed
+        expected = (decode_banks(cached['bank_counts'], native, rounds) if isinstance(native, NativeMemory)
+            else decode_postselection(cached['counts'], 4, rounds, 10))
+        if (cached.get('native_circuit_sha256') != signature or cached['measurement_seed'] != seed
                 or cached['total_shots'] != shots or cached['truth'] != int(truth)
                 or cached['cx_budget'] != cx_budget or any(cached[k] != value for k, value in expected.items())):
             raise ValueError('Cached measurement identity/counts changed: ' + str(path))
         return cached
-    samples, _, resources = execute([native], shots, seed, precompiled=True)
-    row = {**decode_postselection(samples[0], 4, rounds, 10), 'truth': int(truth),
+    if isinstance(native, NativeMemory):
+        if shots % len(native.circuits):
+            raise ValueError('Every memory bank must receive equal shots')
+        samples, _, resources = execute(native.circuits, shots//len(native.circuits), seed, precompiled=True)
+        decoded = decode_banks(samples, native, rounds)
+    else:
+        samples, _, resources = execute([native], shots, seed, precompiled=True)
+        decoded = decode_postselection(samples[0], 4, rounds, 10)
+    row = {**decoded, 'truth': int(truth),
         'measurement_seed': seed, 'resources': resources, 'cx_budget': cx_budget,
-        'native_circuit_sha256': native_hash}
+        'native_circuit_sha256': signature}
     if cx_budget is not None and resources['cx_shot_weighted_total'] > cx_budget:
         raise RuntimeError('Hard CX budget exceeded')
     write_json(path, row)
@@ -119,28 +176,32 @@ def _measure_grid(images, truth, keys, labels, config, task, directory, *, test=
         index = local_index + task.get('image_offset', 0)
         compile_seed = independent_seed(task['data_seed'], index, 17)
         timer = perf_counter()
-        native = _native(query, keys, labels, config, compile_seed)
+        native = _native_for_task(query, keys, labels, config, compile_seed, task, index)
         compilation_seconds = perf_counter() - timer
         timer = perf_counter()
-        anchored = native if config == anchor else _native(anchor_images[local_index], anchor_keys, anchor_labels, anchor, compile_seed)
+        anchored = native if config == anchor else _native_for_task(anchor_images[local_index], anchor_keys, anchor_labels, anchor, compile_seed, task, index)
         anchor_seconds = perf_counter() - timer
         metadata = directory / f'circuit-{index:05d}.json'
         if not metadata.exists():
-            write_json(metadata, {'native_circuit_sha256': circuit_digest(native),
+            write_json(metadata, {'native_circuit_sha256': native_hash(native),
                 'classical_model_compilation_seconds': compilation_seconds,
+                'compilation_scope': 'shared cache load or one locked compilation' if task.get('measurement_shards') else 'compilation',
                 'classical_budget_anchor_compilation_seconds': anchor_seconds,
                 'compilation_amortization': 'one native circuit reused across all modes, budgets and measurement seeds',
                 'native_qubits': native.num_qubits, 'native_depth': native.depth()})
-        elif json.loads(metadata.read_text())['native_circuit_sha256'] != circuit_digest(native):
+        elif json.loads(metadata.read_text())['native_circuit_sha256'] != native_hash(native):
             raise ValueError('Compiled circuit changed on resume')
         cx, anchor_cx = int(native.count_ops().get('cx', 0)), int(anchored.count_ops().get('cx', 0))
         if index == 0:
             with (directory / 'example-native.qpy').open('wb') as stream:
-                qpy.dump(native, stream)
-        for mode in ('equal_shot', 'equal_cnot'):
-            for budget in budgets:
-                shots, cx_budget = budget_shots(cx, anchor_cx, budget, mode)
-                for repetition in seeds:
+                qpy.dump(native.circuits if isinstance(native, NativeMemory) else native, stream)
+        grid = task.get('grid_point')
+        modes = [grid['mode']] if grid else ('equal_shot', 'equal_cnot')
+        for mode in modes:
+            for budget in ([grid['budget']] if grid else budgets):
+                shots, cx_budget = (allocate_shots(native, anchor_cx, budget, mode) if isinstance(native, NativeMemory)
+                    else budget_shots(cx, anchor_cx, budget, mode))
+                for repetition in ([grid['seed']] if grid else seeds):
                     seed = independent_seed(task['data_seed'], repetition, index, 999 if test else 31,
                         0 if mode == 'equal_shot' else 1, budget)
                     path = directory / f'{mode}-b{budget}-s{repetition}-i{index:05d}.json'
@@ -196,7 +257,9 @@ def image_task(task):
             rows = []
             for index in range(start, min(stop, len(keys))):
                 native = _native(keys[index], keys, labels, config, independent_seed(task['data_seed'], index, 3))
-                rows.append(_sample(native, task['fit_shots'], independent_seed(task['data_seed'], index, task['fit_shots'], 7),
+                shots = (task['fit_shots']//len(native.circuits)*len(native.circuits)
+                    if isinstance(native, NativeMemory) else task['fit_shots'])
+                rows.append(_sample(native, shots, independent_seed(task['data_seed'], index, task['fit_shots'], 7),
                     directory / f'image-{index:03d}.json', config['rounds'], labels[index]))
             return {'rows': rows, 'truth': labels[start:stop].tolist()}
         images, truth = _vectors(data['validation_images'][start:stop], config), data['validation_labels'][start:stop]
@@ -241,8 +304,14 @@ def evaluate_sharded(tasks, *, jobs, cpu_budget, directory, batch_size):
         with np.load(task['prepared_data']) as data:
             size = len(data['validation_labels'])
         for index in range(0, size, batch_size):
-            shards.append({**task, 'id': task['id'] + f'-i{index:05d}', 'parent': task['id'],
-                'image_kind': 'validation', 'image_offset': index, 'image_stop': index + batch_size})
+            points = ([{'mode': mode, 'budget': budget, 'seed': seed}
+                for mode in ('equal_shot', 'equal_cnot') for budget in task['shot_budgets']
+                for seed in task['measurement_seeds']] if task.get('measurement_shards') else [None])
+            for point in points:
+                suffix = f'-{point["mode"]}-b{point["budget"]}-s{point["seed"]}' if point else ''
+                shards.append({**task, 'id': task['id'] + f'-i{index:05d}'+suffix, 'parent': task['id'],
+                    'image_kind': 'validation', 'image_offset': index, 'image_stop': index + batch_size,
+                    **({'grid_point': point} if point else {})})
     values = run_tasks('qcenn_qml.mnist_study:image_task', shards, jobs=jobs,
         cpu_budget=cpu_budget, directory=directory / 'validation')
     grouped = defaultdict(list)
@@ -276,7 +345,8 @@ def evaluate_task(task):
         target.mkdir(exist_ok=True)
         for index, (query, label) in enumerate(zip(keys, labels, strict=True)):
             native = _native(query, keys, labels, config, independent_seed(task['data_seed'], index, 3))
-            rows.append(_sample(native, budget, independent_seed(task['data_seed'], index, budget, 7),
+            shots = budget//len(native.circuits)*len(native.circuits) if isinstance(native, NativeMemory) else budget
+            rows.append(_sample(native, shots, independent_seed(task['data_seed'], index, budget, 7),
                 target / f'image-{index:03d}.json', config['rounds'], label))
         measured = classification_metrics(labels, [r['prediction'] for r in rows])
         gate.append({'shots': budget, **measured})
@@ -321,7 +391,8 @@ def summarize(candidates, agreement_threshold):
             accuracy = [r['accuracy'] for _, r in pairs]
             agreement = float(np.mean(agreements))
             high_match = float(np.mean(high_matches))
-            eligible = min(agreement, float(np.mean(high_agreements)), high_match) >= agreement_threshold and all(r['accepted_shots_min'] > 0 for _, r in pairs)
+            stability = min(agreement, float(np.mean(high_agreements)), high_match)
+            eligible = (stability >= agreement_threshold or np.isclose(stability, agreement_threshold, rtol=0, atol=1e-12)) and all(r['accepted_shots_min'] > 0 for _, r in pairs)
             summaries.append({'configuration': config, 'mode': mode, 'base_shots': budget,
                 'accuracy_mean': float(np.mean(accuracy)),
                 'accuracy_data_seed_cluster_95': cluster_interval(accuracy, [s for s, _ in pairs]),
@@ -470,10 +541,11 @@ def test_frozen(freeze_file, output_dir, *, jobs=1, cpu_budget=1, data_root='dat
 @single_writer
 def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 202, 303),
         shot_budgets=(1024, 4096, 16384), gate_shot_budgets=(1024, 4096, 16384),
-        validation_per_class=2, test_per_class=100, damping_values=(.05,), agreement_threshold=.95,
+        validation_per_class=2, test_per_class=100, damping_values=(), agreement_threshold=.95,
         test_measurement_seed=99991, exclusions_file=None, jobs=1, cpu_budget=1,
         data_root='data', no_download=False, output_dir='results/mnist-study', resume=False,
-        phase='all', smoke=False, selection_mode='equal_shot', image_batch_size=0):
+        phase='all', smoke=False, selection_mode='equal_shot', image_batch_size=0,
+        accuracy_profile=False, growth_memories=(4, 8, 16)):
     if len(set(data_seeds)) != len(data_seeds) or not data_seeds:
         raise ValueError('Unique nonempty data seeds required')
     if len(set(measurement_seeds)) < 2 or len(set(measurement_seeds)) != len(measurement_seeds) or test_measurement_seed in measurement_seeds:
@@ -488,6 +560,10 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         raise ValueError('Damping ablations require 0 < damping < 1')
     if selection_mode not in ('equal_shot', 'equal_cnot') or image_batch_size < 0:
         raise ValueError('Invalid selection mode/image batch size')
+    if agreement_threshold < .95:
+        raise ValueError('The scientific measurement stability gate must remain at least 0.95')
+    if list(growth_memories) != sorted(set(growth_memories)) or any(m < 4 or m % 2 or m > 64 for m in growth_memories):
+        raise ValueError('Growth memories must be increasing even values from 4 to 64 per digit')
     args = dict(locals())
     for key in ('resume', 'phase', 'jobs', 'cpu_budget', 'no_download'):
         args.pop(key)
@@ -508,7 +584,8 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         if external.get('dataset') != dataset:
             raise ValueError('Exclusion dataset mismatch')
         excluded.update(external['indices'])
-    splits = make_splits(train_labels, test_labels, data_seeds, validation_per_class, test_per_class, excluded)
+    reserve = max(3, max(growth_memories, default=3)) if accuracy_profile and not smoke else 3
+    splits = make_splits(train_labels, test_labels, data_seeds, validation_per_class, test_per_class, excluded, reserve)
     # No test image or test label is passed to any validation worker.
     del test_images, test_labels
     for seed, split in splits.items():
@@ -536,14 +613,23 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
                     'shot_budgets': sorted(shot_budgets), 'gate_shot_budgets': sorted(gate_shot_budgets),
                     'budget_anchor_configuration': configuration(rounds=1, side=4 if smoke else 8),
                     'measurement_seeds': list(measurement_seeds)})
+                if accuracy_profile:
+                    tasks[-1]['measurement_shards'] = True
                 tasks[-1]['source_sha256'] = source['source_sha256']
         print(f'STAGE {name}: {len(tasks)} configuration/data-seed jobs', flush=True)
-        if image_batch_size:
-            completed.extend(evaluate_sharded(tasks, jobs=jobs, cpu_budget=cpu_budget,
-                directory=directory / name, batch_size=image_batch_size))
-        else:
-            completed.extend(run_tasks('qcenn_qml.mnist_study:evaluate_task', tasks, jobs=jobs,
-                cpu_budget=cpu_budget, directory=directory / name))
+        try:
+            if image_batch_size:
+                completed.extend(evaluate_sharded(tasks, jobs=jobs, cpu_budget=cpu_budget,
+                    directory=directory / name, batch_size=image_batch_size))
+            else:
+                completed.extend(run_tasks('qcenn_qml.mnist_study:evaluate_task', tasks, jobs=jobs,
+                    cpu_budget=cpu_budget, directory=directory / name))
+        except BaseException as error:
+            write_json(directory / 'report.json', {'experiment': 'staged_measured_mnist_study',
+                **CORE_DISCLOSURE, 'status': 'INTERRUPTED' if isinstance(error, KeyboardInterrupt) else 'FAILED',
+                'failed_stage': name, 'error': str(error), 'stages': stages, 'test_evaluated': False,
+                'source': source})
+            raise
         summaries = summarize(completed, agreement_threshold)
         selected = choose(summaries, selection_mode)
         stage = {'stage': name, 'summaries': summaries, 'selected': selected,
@@ -560,15 +646,34 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
         for memory in (2, 3):
             selected = run_stage(f'memory-{memory}', [configuration(rounds=r, memory=memory, side=side) for r in (1, 2, 4)])
         best = selected['configuration']
-        ablations = [configuration(best['rounds'], best['memory'], encoding, resolution, damping)
-            for encoding, resolution in [('amplitude', side), ('amplitude', 4), ('angle', 4)]
-            for damping in (0., *damping_values)]
+        if accuracy_profile and not smoke:
+            ablations = [configuration(rounds, best['memory'], 'amplitude', side, 0., method, readout)
+                for method, readout, rounds in [('none', 'nearest_record', best['rounds']),
+                    ('center', 'class_sum', best['rounds']),
+                    ('deskew', 'class_sum', best['rounds']), ('center', 'nearest_record', best['rounds']),
+                    ('deskew', 'nearest_record', best['rounds']), ('deskew', 'nearest_record', 8)]]
+            # Expensive damping and angle sweeps are explicit legacy investigations.
+            ablations.extend(configuration(best['rounds'], best['memory'], damping=d) for d in damping_values)
+        else:
+            ablations = [configuration(best['rounds'], best['memory'], encoding, resolution, damping)
+                for encoding, resolution in [('amplitude', side), ('amplitude', 4), ('angle', 4)]
+                for damping in (0., *damping_values)]
         selected = run_stage('encoding-damping', ablations)
+        if selected and accuracy_profile and not smoke:
+            for memory in growth_memories:
+                best = selected['configuration']
+                selected = run_stage(f'memory-{memory}', [
+                    {**best, 'memory': memory, 'readout': 'nearest_record'},
+                    {**best, 'memory': memory, 'readout': 'nearest_record', 'rounds': 8}])
     final = {'experiment': 'staged_measured_mnist_study', **CORE_DISCLOSURE, 'stages': stages,
         'dataset': dataset, 'smoke_only': smoke, 'source': source, 'test_evaluated': False,
         'dataset_loading_seconds': loading_seconds, 'logical_qubit_limit': 128,
         'record_order': 'Seeded permutation per memory size; damping does not use class-sorted record addresses',
         'status': 'BLOCKED_FIT_OR_MEASUREMENT_STABILITY', 'selection_used_test_labels': False}
+    final.update(accuracy_target=1., accuracy_target_scope='fresh held-out test; never a promised result',
+        accuracy_target_achieved=False, accuracy_profile=accuracy_profile,
+        fixed_preprocessing_is_classical_input_encoding=True,
+        memory_banks='Balanced raw-record banks; equal shots per bank; measured count aggregation only')
     if selected:
         payload = {'schema': 2, 'dataset': dataset, 'selected': selected, 'splits': splits,
             'excluded_test_indices': sorted(excluded), 'test_measurement_seed': test_measurement_seed,
@@ -583,11 +688,20 @@ def study(*, dataset='mnist', data_seeds=(42, 43, 44), measurement_seeds=(101, 2
             raise ValueError('Refusing to overwrite a different frozen configuration')
         write_json(freeze_path, frozen)
         final.update(status='VALIDATED_AND_FROZEN', selected=selected, freeze_sha256=frozen['sha256'])
+        write_json(directory / 'report.json', final)
         if phase == 'all':
-            result = test_frozen(freeze_path, directory / 'fresh-test', jobs=jobs, cpu_budget=cpu_budget,
-                data_root=data_root, resume=resume, image_batch_size=image_batch_size)
+            try:
+                result = test_frozen(freeze_path, directory / 'fresh-test', jobs=jobs, cpu_budget=cpu_budget,
+                    data_root=data_root, resume=resume, image_batch_size=image_batch_size)
+            except BaseException as error:
+                final.update(status='INTERRUPTED' if isinstance(error, KeyboardInterrupt) else 'FAILED',
+                    failed_stage='fresh-test', error=str(error))
+                write_json(directory / 'report.json', final)
+                raise
             final.update(status='DONE', test_evaluated=True, test_results=result['test_results'],
                 test_summary=result['summary'], paired_comparisons=result['paired_comparisons'])
+            selected_test = [r for r in result['summary'] if r['model'] == 'selected' and r['mode'] == selection_mode]
+            final['accuracy_target_achieved'] = bool(selected_test) and all(r['accuracy'] == 1. for r in selected_test)
     write_json(directory / 'report.json', final)
     print(f'MNIST study status: {final["status"]}; report={directory / "report.json"}', flush=True)
     return final
@@ -602,7 +716,10 @@ def main(argv=None):
     parser.add_argument('--measurement-seeds', nargs='+', type=int, default=[101, 202, 303])
     parser.add_argument('--shot-budgets', nargs='+', type=int, default=[1024, 4096, 16384])
     parser.add_argument('--gate-shot-budgets', nargs='+', type=int, default=[1024, 4096, 16384])
-    parser.add_argument('--damping-values', nargs='+', type=float, default=[.05])
+    parser.add_argument('--damping-values', nargs='+', type=float, default=[])
+    parser.add_argument('--accuracy-profile', action='store_true',
+        help='Fixed centering/deskew, measured nearest-record readout, balanced larger quantum memories; damping off by default')
+    parser.add_argument('--growth-memories', nargs='+', type=int, default=[4, 8, 16], help='Raw examples per digit, staged after encoding selection')
     parser.add_argument('--agreement-threshold', type=float, default=.95)
     parser.add_argument('--selection-mode', choices=['equal_shot', 'equal_cnot'], default='equal_shot')
     parser.add_argument('--image-batch-size', type=int, default=1, help='Independent images per worker; 0 retains coarse seed/config tasks')

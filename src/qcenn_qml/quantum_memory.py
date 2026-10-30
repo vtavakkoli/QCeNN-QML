@@ -5,7 +5,8 @@ from .quantum import amplitude_preparation
 
 
 def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
-                   damping=0., value_bits=4, max_qubits=96, reset_memory=False):
+                   damping=0., value_bits=4, max_qubits=96, reset_memory=False,
+                   measure_index=False):
     from qiskit import QuantumCircuit
     from qiskit.circuit.library import UCRYGate
     query, keys = np.asarray(query, float), np.asarray(keys, float)
@@ -33,7 +34,7 @@ def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
     width = index_width*(rounds if reset_memory else 1) + rounds*(data_width+1) + value_bits + damping_width + scratch_width
     if width > max_qubits:
         raise MemoryError(f"Circuit needs {width} qubits, budget {max_qubits}")
-    circuit = QuantumCircuit(width, value_bits+rounds)
+    circuit = QuantumCircuit(width, value_bits+rounds+(index_width if measure_index else 0))
     scratch_end=width-damping_width
     scratch=list(range(scratch_end-scratch_width,scratch_end))
     environment_offset=scratch_end
@@ -79,6 +80,8 @@ def memory_circuit(query, keys, labels, *, rounds=4, encoding="amplitude",
     qrom(circuit, index, values, labels)
     circuit.measure(values, range(value_bits))
     circuit.measure(flags, range(value_bits, value_bits+rounds))
+    if measure_index:
+        circuit.measure(index, range(value_bits+rounds, circuit.num_clbits))
     circuit.metadata = {"output_qubits": values, "resident_index_qubits": index_width,
         "quantum_recurrence_rounds": rounds, "classical_state_feedback": False,
         "retained_index_across_rounds":not reset_memory,
