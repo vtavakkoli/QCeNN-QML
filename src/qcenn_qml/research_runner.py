@@ -58,7 +58,8 @@ def short_group(spec_file):
         block = root / 'experiments/transformer-block/report.json'
         if block.exists() and json.loads(block.read_text()).get('status') == 'VERIFIED':
             audit = {'id': 'smol-audit', 'module': 'qcenn_qml.smol_feasibility',
-                'arguments': ['--transformer-report', str(block)],
+                'arguments': ['--transformer-report', str(block), '--attention-report',
+                    str(root / 'experiments/attention/report.json')],
                 'report_dir': str(root / 'experiments/smol-audit'), 'source_sha256': spec['source_sha256']}
             try:
                 run_tasks('qcenn_qml.research_runner:module_task', [audit], jobs=1,
@@ -121,7 +122,7 @@ def _validate_model(name, path, code):
         expected = report.get('configuration', {})
         count = len(expected.get('corpora', [])) * len(expected.get('data_seeds', [])) * len(expected.get('measurement_seeds', []))
         return 'DONE' if code == 0 and report.get('status') == 'DONE' and count > 0 and len(report.get('runs', [])) == count else 'FAILED'
-    if name == 'transformer-block':
+    if name in ('transformer-block', 'transformer-replacement'):
         return 'DONE' if code == 0 and report.get('status') == 'VERIFIED' else 'FAILED'
     return 'DONE' if code == 0 else 'FAILED'
 
@@ -149,6 +150,8 @@ sha256sum "$2.zip" > "$2.zip.sha256"
 def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=None,
         resume=False, memory_per_worker_gib=4., root_lock=None, text_corpus_file=None, text_new_tokens=2):
     root = Path(root).resolve()
+    if only not in ('all', 'mnist', 'transformer') or corpus_files:
+        raise ValueError('Diffusion is retired from active studies; select mnist or transformer without corpus files')
     available = detect_resources()
     cpus = int(cpus or os.environ.get('QCENN_CPUS') or available['cpu_budget'])
     if not 1 <= cpus <= available['cpu_budget']:
@@ -163,7 +166,8 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     data_root = str(Path(os.environ.get('QCENN_DATA_ROOT', 'data')).resolve())
     diffusion_examples = int(os.environ.get('QCENN_DIFFUSION_EXAMPLES', '256')) if corpus_files and not smoke else None
     configuration = {'smoke': smoke, 'only': only, 'corpus_files': [str(Path(p).resolve()) for p in corpus_files] if corpus_files else None,
-        'runner_schema': 1, 'selection_mode': 'equal_shot', 'image_batch_size': 1, 'case_batch_size': 1,
+        'runner_schema': 2, 'selection_mode': 'equal_shot', 'image_batch_size': 1, 'case_batch_size': 1,
+        'diffusion_retired': True, 'mnist_accuracy_profile': True,
         'text_corpus_file': str(text_corpus), 'text_corpus_sha256': hashlib.sha256(text_corpus.read_bytes()).hexdigest(),
         'text_new_tokens': text_new_tokens, 'data_root': data_root, 'diffusion_examples': diffusion_examples}
     manifest = initialize(root, configuration, provenance(), resume)
@@ -200,15 +204,13 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     if only in ('all', 'mnist'):
         long_jobs.append(_job('mnist-study', 'qcenn_qml.mnist_study', root,
             [*common, *small, '--image-batch-size', '1', '--selection-mode', 'equal_shot',
+             '--accuracy-profile', '--validation-per-class', '1' if smoke else '5',
+             *([] if smoke else ['--shot-budgets', '4096', '16384', '65536',
+                '--gate-shot-budgets', '4096', '16384', '65536']),
              '--data-root', data_root]))
-    if only in ('all', 'diffusion'):
-        extra = ['--corpus-files', *configuration['corpus_files']] if configuration['corpus_files'] else []
-        # Natural-text profiles use an explicit larger sample. Structured smoke
-        # and the earlier three diagnostic corpora retain all-window evaluation.
-        broad = ['--examples', str(diffusion_examples)] if diffusion_examples is not None else []
-        long_jobs.append(_job('diffusion-study', 'qcenn_qml.diffusion.study', root,
-            [*common, *small, *extra, *broad, '--case-batch-size', '1']))
     if only in ('all', 'transformer'):
+        long_jobs.append(_job('transformer-replacement', 'qcenn_qml.transformer_replacement', root,
+            [*common, *small]))
         short.extend([_job('transformer-block', 'qcenn_qml.quantum_transformer', root, ['--shots', '256']),
             _job('attention', 'qcenn_qml.quantum_attention', root, ['--shots', '256' if smoke else '8192'])])
     if only == 'all':
@@ -229,10 +231,10 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
         now = time.time()
         details = []
         mnist_root = root / 'experiments/mnist-study'
-        scheduler_files = [root / 'experiments/diffusion-study/tasks/status.json', root / 'short-tasks/status.json', root / 'text-tasks/status.json', root / 'audit-tasks/status.json',
+        scheduler_files = [root / 'experiments/transformer-replacement/tasks/status.json', root / 'short-tasks/status.json', root / 'text-tasks/status.json', root / 'audit-tasks/status.json',
             mnist_root / 'fresh-test/tasks/status.json']
-        for phase in ('convergence', 'memory-2', 'memory-3', 'encoding-damping'):
-            scheduler_files.extend(mnist_root / phase / sub / 'status.json' for sub in ('validation', 'fit-128', 'fit-1024', 'fit-4096', 'fit-16384'))
+        for phase in ('convergence', 'memory-2', 'memory-3', 'memory-4', 'memory-8', 'memory-16', 'encoding-damping'):
+            scheduler_files.extend(mnist_root / phase / sub / 'status.json' for sub in ('validation', 'fit-128', 'fit-1024', 'fit-4096', 'fit-16384', 'fit-65536'))
         for file in scheduler_files:
             # Only scheduler status (not every per-image progress file).
             try:
@@ -362,7 +364,7 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
             snapshot(); time.sleep(.2)
         from .report import build
         sources = {key: str(root / 'experiments' / name / 'report.json') for key, name in (
-            ('mnist_study', 'mnist-study'), ('diffusion_study', 'diffusion-study'),
+            ('mnist_study', 'mnist-study'), ('transformer_replacement', 'transformer-replacement'),
             ('transformer_block', 'transformer-block'), ('attention', 'attention'),
             ('smol', 'text'), ('smol_feasibility', 'smol-audit')) if name in states}
         summary = root / 'experiments/summary'
@@ -437,7 +439,7 @@ def main(argv=None):
     parser.add_argument('--replace-run')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--smoke', action='store_true', default=None)
-    parser.add_argument('--study-only', choices=['all', 'mnist', 'diffusion', 'transformer'])
+    parser.add_argument('--study-only', choices=['all', 'mnist', 'transformer'])
     parser.add_argument('--cpus', type=int)
     parser.add_argument('--jobs', type=int)
     parser.add_argument('--memory-per-worker-gib', type=float, default=4.)

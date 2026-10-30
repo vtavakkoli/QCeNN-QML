@@ -23,3 +23,9 @@ replace the upstream license.
 Previously released QCeNN-QML material under MIT remains licensed under
 MIT for copies validly obtained under those earlier terms. Third-party
 dependencies, datasets, and models retain their own licenses.
+
+Version 0.6 independently adds fixed MNIST image preprocessing, measured raw-record
+memory banks, and complete small transformer replacement tests. No pretrained
+Smol weights or upstream QCeNN-MI implementation is copied. Historical WikiText
+snapshots retain their separate data licenses even though diffusion is retired
+from active launchers.

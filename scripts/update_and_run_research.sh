@@ -5,13 +5,14 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: bash scripts/update_and_run_research.sh [--repository PATH] [--smoke]
-       [--cpu-only] [--text-source wikitext|bundled] [--cpus N] [--jobs N]
+       [--cpu-only] [--text-source bundled] [--study-only mnist|transformer] [--cpus N] [--jobs N]
        [--ref GIT_REF]
        [--replace-run OLD_OUTPUT] [--output-dir NEW_OUTPUT]
        [--resume OUTPUT | --status [OUTPUT] | --stop OUTPUT]
 
-Full: measured MNIST stages/frozen test, matched WikiText diffusion, quantum
-attention, a tiny coherent transformer, coherent text diagnostic and Smol audit.
+Full: larger measured MNIST memories/frozen test, complete small quantum
+transformer replacement, attention, coherent text diagnostic and Smol audit.
+Diffusion is retired; no diffusion jobs or WikiText downloads are launched.
 Downloads public dataset snapshots and creates separate Python environments.
 No system Python, GPU driver, running checkout or existing result is upgraded
 in place. --replace-run stops ONLY the verified old experiment tree.
@@ -25,17 +26,19 @@ qcenn_smoke=0; qcenn_gpu=auto; qcenn_text=auto
 qcenn_output=; qcenn_replace=; qcenn_action=run; qcenn_action_output=
 qcenn_cpus=; qcenn_jobs=
 qcenn_ref=origin/main
+qcenn_study_only=all
 while (($#)); do
   case "$1" in
     --help|-h) usage; exit 0 ;;
     --smoke) qcenn_smoke=1; shift ;;
     --cpu-only) qcenn_gpu=off; shift ;;
-    --repository|--ref|--text-source|--cpus|--jobs|--replace-run|--output-dir|--resume|--stop)
+    --repository|--ref|--text-source|--study-only|--cpus|--jobs|--replace-run|--output-dir|--resume|--stop)
       (($# >= 2)) || { usage >&2; exit 1; }
       case "$1" in
         --repository) qcenn_repo=$2 ;;
         --ref) qcenn_ref=$2 ;;
         --text-source) qcenn_text=$2 ;;
+        --study-only) qcenn_study_only=$2 ;;
         --cpus) qcenn_cpus=$2 ;;
         --jobs) qcenn_jobs=$2 ;;
         --replace-run) qcenn_replace=$2 ;;
@@ -107,7 +110,8 @@ PY
   fi
   exec "${qcenn_saved[1]}" -u -m qcenn_qml.research_runner --resume "${qcenn_resume_args[@]}"
 fi
-[[ $qcenn_text == auto || $qcenn_text == bundled || $qcenn_text == wikitext ]] || { usage >&2; exit 1; }
+[[ $qcenn_text == auto || $qcenn_text == bundled ]] || { printf 'Diffusion/WikiText is retired; use --text-source bundled.\n' >&2; exit 1; }
+[[ $qcenn_study_only == all || $qcenn_study_only == mnist || $qcenn_study_only == transformer ]] || { usage >&2; exit 1; }
 for qcenn_tool in git flock timeout zip unzip sha256sum; do
   command -v "$qcenn_tool" >/dev/null || { printf 'Required command missing: %s\n' "$qcenn_tool" >&2; exit 1; }
 done
@@ -236,17 +240,7 @@ PY
     fi
   fi
 fi
-if [[ $qcenn_text == auto ]]; then
-  if ((qcenn_smoke)); then qcenn_text=bundled; else qcenn_text=wikitext; fi
-fi
-qcenn_arguments=()
-if [[ $qcenn_text == wikitext ]]; then
-  qcenn_setup_state DATA 'Preparing archived WikiText slices and attribution.'
-  timeout 1200 "$qcenn_python" -m qcenn_qml.prepare_text --output-dir "$qcenn_repo/data/wikitext-v05" > "$qcenn_config/text-corpora.txt"
-  mapfile -t qcenn_corpora < "$qcenn_config/text-corpora.txt"
-  ((${#qcenn_corpora[@]} == 3)) || { printf 'Natural text preparation did not produce three snapshots.\n' >&2; exit 1; }
-  qcenn_arguments+=(--corpus-files "${qcenn_corpora[@]}")
-fi
+qcenn_arguments=(--study-only "$qcenn_study_only")
 if ((qcenn_smoke)); then qcenn_arguments+=(--smoke); fi
 [[ -z $qcenn_cpus ]] || qcenn_arguments+=(--cpus "$qcenn_cpus")
 [[ -z $qcenn_jobs ]] || qcenn_arguments+=(--jobs "$qcenn_jobs")

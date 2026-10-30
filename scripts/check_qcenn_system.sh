@@ -12,7 +12,7 @@ Usage: bash scripts/check_qcenn_system.sh [--benchmark] [--cpu-budget N]
 Run ON the machine/allocation that will execute the studies. Inspection needs
 only Python >=3.10; Aer/project imports are isolated and time limited.
 --benchmark also compares CPU worker/thread combinations using small measured
-MNIST-memory and diffusion circuits, with two repeats. It skips benchmarking
+MNIST-memory circuits, with two repeats. It skips benchmarking
 while other QCeNN jobs are present. No datasets are downloaded, no scientific
 results are changed, and no running experiment is stopped.
 
@@ -290,14 +290,10 @@ def prepare_benchmark(directory):
     from qiskit import qpy
     from qcenn_qml.coherent import _compile_components
     from qcenn_qml.quantum_memory import memory_circuit
-    from qcenn_qml.corpus_memory import denoising_memory_circuit
     rng = np.random.default_rng(42)
     keys = rng.uniform(.1, 1., (10, 16))
-    circuits = [memory_circuit(keys[i], keys, np.arange(10), rounds=2) for i in (0, 1)]
-    contexts = [i % 4 + ((i // 4) << 2) for i in range(16)]
-    values = [(i // 4 + i) % 3 for i in range(16)]
-    circuits += [denoising_memory_circuit(contexts, values, i, context_bits=4,
-        value_bits=2, mask=3, original=3, steps=1, beta=1., eta=.65, amplify=1) for i in (0, 1)]
+    circuits = [memory_circuit(keys[i], keys, np.arange(10), rounds=rounds)
+        for rounds in (1, 2) for i in (0, 1)]
     native = [_compile_components(c, 42) for c in circuits]
     with (directory / 'benchmark.qpy').open('wb') as stream:
         qpy.dump(native, stream)
@@ -499,21 +495,21 @@ def main(args):
             tuning = benchmark(output, cpus, max_workers, args.benchmark_seconds, environment)
     result['benchmark'] = tuning
     jobs = tuning['best']['jobs'] if tuning['status'] == 'complete' else max_workers
-    result['recommendation'] = {'cpu_budget': cpus, 'mnist_jobs': min(jobs, 9),
-        'diffusion_jobs': min(jobs, 18), 'basis': 'measured_small_circuits' if tuning['status'] == 'complete' else 'untuned_memory_limited_estimate',
-        'existing_runner_outer_jobs': 1, 'current_model_backend': 'CPU matrix_product_state',
+    result['recommendation'] = {'cpu_budget': cpus, 'mnist_jobs': jobs,
+        'transformer_jobs': jobs, 'basis': 'measured_small_circuits' if tuning['status'] == 'complete' else 'untuned_memory_limited_estimate',
+        'existing_runner_outer_jobs': jobs, 'current_model_backend': 'CPU matrix_product_state with qualified GPU dispatch',
         'notes': [
             'Current Aer MPS studies use CPU. GPU availability does not move them to a GPU.',
             'GPU statevector/tensor_network would require a separately validated backend; never use a dense statevector for the 241-qubit toy block.',
             'Use independent workers first; a single MPS circuit may not scale with OpenMP thread count.',
-            'Current all-track runner splits resources statically. Outer QCENN_JOBS=1 gives each track the entire budget in sequence, but does not apply the memory-limited worker recommendation.',
+            'The active all-track runner shares one bounded worker pool; independent measurement tasks release slots as they finish.',
             'Direct study commands below can use measured worker counts and run their own configurations/seeds in parallel.',
             'Available resources and estimates are a snapshot; NUMA, shared quotas and concurrent users can affect throughput.',
             'Worker memory can grow sharply with circuit entanglement; synthetic timings do not certify larger workloads.',
             'Fit-before-validation and frozen validation-before-test dependencies must stay sequential.',
             'These models load raw records and execute measured circuits; this diagnostic does not implement neural-weight training.'
         ]}
-    env_values = {'QCENN_CPUS': str(cpus), 'QCENN_JOBS': '1', 'QCENN_PYTHON': sys.executable,
+    env_values = {'QCENN_CPUS': str(cpus), 'QCENN_JOBS': str(jobs), 'QCENN_PYTHON': sys.executable,
         'QCENN_THREADS': '1', 'OMP_NUM_THREADS': '1', 'OPENBLAS_NUM_THREADS': '1',
         'MKL_NUM_THREADS': '1', 'NUMEXPR_NUM_THREADS': '1', 'QISKIT_PARALLEL': 'FALSE', 'QISKIT_NUM_PROCS': '1'}
     (output / 'recommended.env').write_text('# Total budget for a new run; do not add to an existing allocation.\n' +
@@ -522,8 +518,9 @@ def main(args):
         '# New output directories; no scientific settings or existing checkpoints are modified.',
         'cd -- ' + shlex.quote(str(repo)), 'source ' + shlex.quote(str(output / 'recommended.env')),
         '# Direct studies with tuned/estimated worker counts (these commands do not create ZIPs):']
-    for name, module, cap in [('mnist', 'qcenn_qml.mnist_study', 9), ('diffusion', 'qcenn_qml.diffusion.study', 18)]:
-        commands.append(f'"$QCENN_PYTHON" -u -m {module} --jobs {min(jobs, cap)} --cpu-budget "$QCENN_CPUS" '
+    for name, module, extra in [('mnist', 'qcenn_qml.mnist_study', '--accuracy-profile --image-batch-size 1'),
+            ('transformer', 'qcenn_qml.transformer_replacement', '')]:
+        commands.append(f'"$QCENN_PYTHON" -u -m {module} {extra} --jobs {jobs} --cpu-budget "$QCENN_CPUS" '
             f'--output-dir "results/{name}-system-tuned-$(date +%Y%m%d-%H%M%S)-$$"')
     (output / 'commands.txt').write_text('\n'.join(commands) + '\n')
     save(output / 'report.json', result)
@@ -543,9 +540,9 @@ def main(args):
         for row in tuning['means_of_two_trials']:
             lines.append(f'  {row["jobs"]} workers x {row["threads_per_worker"]} threads: {row["shots_per_second"]:.1f} measured shots/s')
         lines += [f'Small-circuit timing ratio vs one worker: {tuning["speed_ratio_vs_one_worker"]:.2f}x', tuning['scope']]
-    lines += [f'Suggested direct study jobs: MNIST={min(jobs, 9)}, diffusion={min(jobs, 18)}',
+    lines += [f'Suggested direct study jobs: MNIST={jobs}, transformer={jobs}',
         f'Recommendation basis: {result["recommendation"]["basis"]}',
-        'Existing runner: QCENN_JOBS=1 assigns the whole budget to one track at a time.',
+        'Active runner: QCENN_JOBS bounds the total shared one-thread worker pool.',
         'GPU inventory: ' + result['gpu']['nvidia'].get('output', result['gpu']['nvidia']['status']).strip(),
         *['NOTE: ' + text for text in warnings], *result['recommendation']['notes'],
         'See commands.txt and recommended.env. No experiments were started or stopped.']

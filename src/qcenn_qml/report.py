@@ -6,7 +6,7 @@ from pathlib import Path
 
 def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
           recurrent=None,attention=None,smol_feasibility=None,
-          mnist_study=None,diffusion_study=None,transformer_block=None):
+          mnist_study=None,diffusion_study=None,transformer_block=None,transformer_replacement=None):
     sources = {key:value for key,value in (("mnist",mnist),("smol",smol),("diffusion",diffusion)) if value}
     if diffusion_noisy:
         sources["diffusion_noisy"] = diffusion_noisy
@@ -16,6 +16,8 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
     for kind,source in (("mnist_study",mnist_study),("diffusion_study",diffusion_study),("transformer_block",transformer_block)):
         if source:
             sources[kind]=source
+    if transformer_replacement:
+        sources['transformer_replacement'] = transformer_replacement
     found,missing={},[]
     for kind,source in sources.items():
         paths=source if isinstance(source,(list,tuple)) else [source]
@@ -123,6 +125,13 @@ def build(mnist, smol, diffusion, output_dir, diffusion_noisy=None,
             '- Two tokens, width two, one head; three-bit fixed-point reversible arithmetic.',
             '- QKV, RoPE, causal softmax, coherent weighted vectors, output projection, RMSNorm, residuals and SwiGLU.',
             '- Fixed toy weights; no pretrained Smol weights, quantum neural training or hardware execution.','']
+    if 'transformer_replacement' in found:
+        x = found['transformer_replacement']
+        lines += ['## Complete small quantum transformer replacement', '',
+            f"- Status: {x.get('status')}; measured checks: {len(x.get('cases', []))}.",
+            '- Quantum embedding, one/two complete fixed-point blocks and vocabulary argmax.',
+            '- All 16 input pairs tested in superposition; phase interference and hybrid-host generation checked separately.',
+            '- Four-token toy vocabulary and fixed weights; full pretrained Smol remains unimplemented.', '']
     if missing:lines+=["## Requested reports that are missing",""]+["- "+p for p in missing]+[""]
     lines+=["## Conclusion","",
             "All experiments are feasibility demonstrations. They do not establish speedup, advantage, physically executed noise benefits, or a full 135M-parameter quantum language model.",""]
@@ -144,6 +153,7 @@ def main(argv=None):
     parser.add_argument('--mnist-study')
     parser.add_argument('--diffusion-study')
     parser.add_argument('--transformer-block')
+    parser.add_argument('--transformer-replacement')
     return build(**vars(parser.parse_args(argv)))
 
 if __name__=="__main__":

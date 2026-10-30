@@ -31,19 +31,6 @@ jobs:
           case "$qcenn_study_code" in 0|2) ;; *) exit "$qcenn_study_code" ;; esac
           bash scripts/run_research_studies.sh --status results/ci/studies
           for archive in results/ci/studies/archives/*.zip; do unzip -t "$archive"; done
-      - name: Parallel runner, gate status and per-experiment ZIPs (digits proxy)
-        env:
-          QCENN_PYTHON: python
-          QCENN_CPUS: '2'
-          QCENN_JOBS: '2'
-        run: |
-          set +e
-          bash scripts/run_quantum_corrections.sh --smoke results/ci/parallel
-          qcenn_code=$?
-          set -e
-          case "$qcenn_code" in 0|2) ;; *) exit "$qcenn_code" ;; esac
-          bash scripts/run_quantum_corrections.sh --status results/ci/parallel
-          for archive in results/ci/parallel/archives/*.zip; do unzip -t "$archive"; done
       - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir results/ci/mnist
       - name: Coherent text CLI smoke (small raw corpus)
         run: >-
@@ -60,23 +47,13 @@ jobs:
           name: recurrent-digits-proxy-smoke
           path: results/ci/recurrent
 
-      - name: Quantum diffusion toy and masked-noise benchmarks
-        run: >-
-          python -m qcenn_qml.diffusion.benchmark --shots 256 --examples 4
-          --beta 1 --eta 0.65 --steps 0 1 3 --corpus-kind toy --readout-error 0
-          --output-dir results/ci/diffusion
-      - name: Broader held-out text with matched readout noise
-        run: >-
-          python -m qcenn_qml.diffusion.benchmark --shots 128 --examples 2
-          --beta 1 --eta 0.65 --steps 0 1 3
-          --corpus-kind text --readout-error 0.05 --output-dir results/ci/diffusion-noisy
       - name: Reversible signed quantum softmax attention
         run: python -m qcenn_qml.quantum_attention --shots 2048 --output-dir results/ci/attention
       - name: Explicit full-Smol coverage and resource audit
         run: python -m qcenn_qml.smol_feasibility --attention-report results/ci/attention/report.json --output-dir results/ci/smol-audit
       - name: Combined quantum research audit
         run: >-
-          python -m qcenn_qml.report --diffusion-noisy results/ci/diffusion-noisy/report.json
+          python -m qcenn_qml.report --transformer-replacement results/ci/studies/experiments/transformer-replacement/report.json
           --recurrent results/ci/recurrent/report.json --attention results/ci/attention/report.json
           --smol-feasibility results/ci/smol-audit/report.json --output-dir results/ci/summary
       - uses: actions/upload-artifact@v4

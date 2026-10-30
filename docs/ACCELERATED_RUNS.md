@@ -1,4 +1,4 @@
-# Accelerated, bounded research runs (v0.5)
+# Accelerated, bounded research runs (v0.6)
 
 QCeNN-QML — Vahid Tavakkoli (2026). See LICENSE, NOTICE.md and CITATION.cff.
 
@@ -29,7 +29,7 @@ experiment tree. It does not use name-based `pkill` and preserves old results.
 
 The updater creates an immutable Git worktree and separate CPU/GPU environments.
 It installs matching project metadata, Qiskit 2.6.1 and Aer 0.18.2, runs the full
-test suite, tries GPU qualification, prepares text snapshots, then starts a new
+test suite, tries GPU qualification, then starts a new
 output directory. It does not upgrade system Python, drivers or the live venv.
 GPU setup/qualification failures are logged and leave CPU execution available.
 The CPU and GPU Aer wheels are never overlaid in one environment.
@@ -56,10 +56,10 @@ CPU/worker limits can be reduced with `--cpus N --jobs N`. v0.4 outputs are not
 silently migrated or relabeled as v0.5 measurements; start a fresh v0.5 run.
 
 For an initial diagnostic, use `--smoke --cpu-only`. Smoke uses the explicitly
-labeled digits proxy and small text data. `--text-source bundled` selects the
-previous authored diffusion corpora; the full updater defaults to WikiText.
-Direct `run_research_studies.sh` uses bundled diffusion unless supplied corpus
-files. `QCENN_LEGACY_RUNNER=1` selects the old static runner explicitly.
+labeled digits proxy and small transformer/text diagnostics. `--study-only mnist`
+or `--study-only transformer` selects one track. Diffusion and automatic WikiText
+downloads are retired. `QCENN_LEGACY_RUNNER=1` selects the historical static runner.
+The former `run_quantum_corrections.sh` now forwards to the shared runner by default.
 
 ## Resource use and sampling
 
@@ -70,9 +70,10 @@ and an 80% memory allowance with a 4 GiB worker estimate. Each worker is bound t
 its leased CPU before NumPy/Qiskit imports. This also gives newly allocated data
 NUMA first-touch locality. Rayon, BLAS and nested OpenMP pools are capped.
 
-MNIST gates, validation and frozen-test images are independent image batches;
-diffusion splits corpus/seed/step/window work into independent batches. Complete
-splits/raw text are prepared once per corpus/data seed. A finished track releases
+MNIST gates and frozen-test images are independent batches; accuracy-profile
+validation splits each image/budget/measurement seed into an independently
+resumable task. Locked native-QPY caches share compilation across measurements.
+Transformer replacement checks are independent tasks in the same pool. A finished track releases
 its slots to the remaining tracks. Fit-before-validation and freeze-before-test
 dependencies remain sequential.
 
@@ -114,7 +115,7 @@ GPU availability alone is not a speedup claim.
 
 `run-state.json`, `STATUS.txt` and the terminal marker agree. Archive creation is
 a separate state; file existence or a zero child exit alone does not imply DONE.
-Seven separate ZIPs cover MNIST, diffusion, the block, attention, the coherent
+Seven separate ZIPs cover MNIST, transformer replacement, the block, attention, the coherent
 text diagnostic, the Smol audit and the combined summary in a full run.
 
 The updater defaults to `QCENN_TASK_TIMEOUT_SECONDS=3600`,
@@ -140,24 +141,21 @@ encoding research. Use `--selection-mode equal_cnot` to request the former polic
 All ten-/twenty-/thirty-record candidates still pass their own fit gate before
 validation; the test remains frozen and excludes declared previously used IDs.
 
-WikiText preparation freezes three disjoint 1,000-row slices of the upstream
-training split. These are slices of **one dataset**, not three independent
-language collections or canonical WikiText perplexity evaluations. Whole-sentence
-splits precede windows and training-only vocabulary selection. Full updater runs
-evaluate 256 held-out windows per slice/data/measurement seed, steps 0/1/3 and
-paired noiseless/0.01/0.05 readout noise, retaining the direct classical-table
-reference and all OOV/invalid-code mass. The 128-record/32-token caps remain.
-Set `QCENN_DIFFUSION_EXAMPLES` before a fresh run to change that declared sample.
+The accuracy profile grows balanced raw-record banks to 160 stored images,
+compares fixed preprocessing and measured nearest-record readout, and disables
+damping by default. Full runner budgets are 4096/16384/65536 shots, with five
+validation images per digit per seed. The former diffusion implementation and
+its negative reports remain available only as historical evidence.
 
-Each text snapshot includes row provenance, content hashes and WikiText
-CC-BY-SA-3.0/GFDL attribution. Those data licenses remain separate from the code's
-custom non-commercial/paid-commercial license. See the
-[dataset card](https://huggingface.co/datasets/Salesforce/wikitext) and
-[public rows API](https://huggingface.co/docs/dataset-viewer/en/rows).
+GPU device selection is passed to `AerSimulator.run(target_gpus=[id])`; Aer
+0.18.2 rejects that option in the constructor despite documenting it as an
+execution option. A CPU API regression checks transport construction, but only
+the execution machine can qualify actual CUDA devices and native noisy circuits.
 
 The coherent text track is explicitly a bounded two-token diagnostic using the
 packaged small corpus. `--text-corpus-file`/`--text-new-tokens` allow larger
 declared experiments in the runner, but increasing coherent history can make
-simulation expensive. The complete transformer remains the two-token,
-width-two, three-bit fixed-weight block. Full pretrained Smol weights, quantum
+simulation expensive. The replacement test adds a full four-token-vocabulary forward with quantum
+embeddings, one/two two-token width-two three-bit blocks and quantum argmax, plus
+separate coherence and hybrid-host checks. See [the v0.6 protocol](ACCURACY_AND_REPLACEMENT.md). Full pretrained Smol weights, quantum
 neural-weight training, physical QPU runs and quantum advantage are not claimed.

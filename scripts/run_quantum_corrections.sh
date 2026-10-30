@@ -2,19 +2,30 @@
 # QCeNN-QML — Vahid Tavakkoli (2026). See LICENSE and CITATION.cff.
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+if [[ ${QCENN_LEGACY_RUNNER:-0} != 1 ]]; then
+  qcenn_forward=()
+  for qcenn_arg in "$@"; do
+    case "$qcenn_arg" in
+      --studies) ;;
+      --mnist-only) qcenn_forward+=(--study-only mnist) ;;
+      *) qcenn_forward+=("$qcenn_arg") ;;
+    esac
+  done
+  exec bash scripts/run_research_studies.sh "${qcenn_forward[@]}"
+fi
 qcenn_latest_file=${QCENN_LATEST_FILE:-results/quantum-corrections-latest.txt}
 
 usage() {
   cat <<'EOF'
 Usage: bash scripts/run_quantum_corrections.sh [--smoke] [--mnist-only] [OUTPUT_DIRECTORY]
-       bash scripts/run_quantum_corrections.sh --studies [--study-only mnist|diffusion|transformer] [--smoke] [OUTPUT_DIRECTORY]
+       bash scripts/run_quantum_corrections.sh --studies [--study-only mnist|transformer] [--smoke] [OUTPUT_DIRECTORY]
        bash scripts/run_quantum_corrections.sh --status [OUTPUT_DIRECTORY]
 
-Full: original MNIST seeds 42/43/44, matched text diffusion, attention,
+Full: original MNIST seeds 42/43/44, attention,
 coherent text memory and Smol audit. Independent jobs run concurrently.
 Smoke: explicit digits proxy and tiny corpora; not scientific benchmark data.
 --mnist-only: rerun only the three MNIST seeds and their combined summary.
---studies: staged MNIST, broader diffusion and a coherent transformer block.
+--studies: staged MNIST and a coherent transformer block. Diffusion is retired.
 --study-only: select one independent study; each has its own ZIP and log.
 Each experiment gets a log, status, command and separate ZIP with checksum.
 
@@ -45,7 +56,7 @@ while [[ ${1:-} == --smoke || ${1:-} == --mnist-only || ${1:-} == --studies || $
     --studies) qcenn_studies=1 ;;
     --study-only)
       qcenn_studies=1; qcenn_study_only=${2:-}; shift
-      [[ $qcenn_study_only == mnist || $qcenn_study_only == diffusion || $qcenn_study_only == transformer ]] || { usage >&2; exit 1; } ;;
+      [[ $qcenn_study_only == mnist || $qcenn_study_only == transformer ]] || { usage >&2; exit 1; } ;;
   esac
   shift
 done
@@ -87,13 +98,12 @@ printf '%s\n' "$$" > "$qcenn_output/runner.pid"
 qcenn_started=$(date +%s)
 qcenn_finalized=0; qcenn_state=RUNNING; qcenn_last_heartbeat=0; qcenn_last_snapshot=0
 qcenn_audit_started=$qcenn_mnist_only
-qcenn_names=(mnist-42 mnist-43 mnist-44 diffusion attention text smol-audit summary)
+qcenn_names=(mnist-42 mnist-43 mnist-44 attention text smol-audit summary)
 if ((qcenn_mnist_only)); then qcenn_names=(mnist-42 mnist-43 mnist-44 summary); fi
 if ((qcenn_studies)); then
   case "$qcenn_study_only" in
-    all) qcenn_names=(mnist-study diffusion-study transformer-block smol-audit summary) ;;
+    all) qcenn_names=(mnist-study transformer-block smol-audit summary) ;;
     mnist) qcenn_names=(mnist-study summary); qcenn_audit_started=1 ;;
-    diffusion) qcenn_names=(diffusion-study summary); qcenn_audit_started=1 ;;
     transformer) qcenn_names=(transformer-block smol-audit summary) ;;
   esac
 fi
@@ -281,10 +291,6 @@ if ((qcenn_studies)); then
     launch mnist-study "$qcenn_python" -u -m qcenn_qml.mnist_study \
       --data-root "$qcenn_data_root" "${qcenn_study_args[@]}" --output-dir "$qcenn_output/experiments/mnist-study"
   fi
-  if [[ $qcenn_study_only == all || $qcenn_study_only == diffusion ]]; then
-    launch diffusion-study "$qcenn_python" -u -m qcenn_qml.diffusion.study \
-      "${qcenn_study_args[@]}" --output-dir "$qcenn_output/experiments/diffusion-study"
-  fi
   if [[ $qcenn_study_only == all || $qcenn_study_only == transformer ]]; then
     launch transformer-block "$qcenn_python" -u -m qcenn_qml.quantum_transformer \
       --shots 256 --output-dir "$qcenn_output/experiments/transformer-block"
@@ -299,9 +305,6 @@ for qcenn_seed in 42 43 44; do
     --output-dir "$qcenn_output/experiments/mnist-$qcenn_seed"
 done
 if ((qcenn_mnist_only == 0)); then
-launch diffusion "$qcenn_python" -u -m qcenn_qml.diffusion.benchmark \
-  --corpus-kind "$qcenn_corpus" --steps 0 1 3 --examples "$qcenn_examples" \
-  --shots "$qcenn_diffusion_shots" --readout-error 0.05 --output-dir "$qcenn_output/experiments/diffusion"
 launch attention "$qcenn_python" -u -m qcenn_qml.quantum_attention \
   --shots "$qcenn_attention_shots" --output-dir "$qcenn_output/experiments/attention"
 launch text "$qcenn_python" -u -m qcenn_qml.smol135 --prompt 'the cat' \
@@ -329,7 +332,6 @@ launch summary "$qcenn_python" -u -m qcenn_qml.report \
   --mnist "$qcenn_output/experiments/legacy-mnist-not-run.json" \
   --recurrent "$qcenn_output/experiments/mnist-42/report.json" \
     "$qcenn_output/experiments/mnist-43/report.json" "$qcenn_output/experiments/mnist-44/report.json" \
-  --diffusion "$qcenn_output/experiments/diffusion/report.json" --diffusion-noisy "$qcenn_output/experiments/diffusion/report.json" \
   --smol "$qcenn_output/experiments/text/report.json" --attention "$qcenn_output/experiments/attention/report.json" \
   --smol-feasibility "$qcenn_output/experiments/smol-audit/report.json" --output-dir "$qcenn_output/experiments/summary"
 fi
