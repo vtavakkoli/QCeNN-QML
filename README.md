@@ -105,7 +105,7 @@ The new test executes quantum token embeddings, all transformer block operators
 (RMSNorm, QKV, RoPE, causal softmax, weighted values, output projection, residuals
 and SwiGLU), and quantum vocabulary projection/argmax. One and two complete
 blocks are checked against an independent classical reference. All 16 input-token
-pairs are sampled from a uniform superposition; separate interference tests
+pairs are sampled in small coherent groups that can run in parallel; separate interference tests
 check phase coherence and clean workspace. An explicit hybrid host then checks
 two-token autoregressive generation using the same measured forward operation.
 
