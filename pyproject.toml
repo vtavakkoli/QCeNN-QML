@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qcenn-qml"
-version = "0.6.0"
+version = "0.6.1"
 description = "Measured MNIST memory banks and complete small quantum transformer replacement studies"
 license = "LicenseRef-QCeNN-QML-NC-Commercial"
 license-files = ["LICENSE", "NOTICE.md"]

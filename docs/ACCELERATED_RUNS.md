@@ -117,6 +117,22 @@ GPU availability alone is not a speedup claim.
 a separate state; file existence or a zero child exit alone does not imply DONE.
 Seven separate ZIPs cover MNIST, transformer replacement, the block, attention, the coherent
 text diagnostic, the Smol audit and the combined summary in a full run.
+Version 0.6.1 adds **`archives/analysis.zip`** combining all useful model evidence
+without nesting the individual ZIPs. Default exports omit QPY/circuit binaries,
+pretrained weight files, public/test image caches and previous-attempt directories.
+Reports, measured model counts, predictions/targets, split IDs, measurement/data
+seeds, frozen settings, resource records, task receipts and selected raw memory
+NPZ files are retained. Tiny fixed model definitions inside reports remain useful.
+At most one auxiliary full-readout JSON audit of at most 1 MiB is kept per track.
+Log tails have a 32 KiB per-file and 128 KiB per-experiment budget; completed-worker
+chatter is omitted. Originals are never deleted or truncated on the host.
+
+`archive-manifest.json` indexes exported payload checksums and omission reasons.
+Large omitted files are not reread merely to hash them. Native ZIP CRC and SHA256
+sidecars are checked before publication. The final combined archive must succeed
+before the runner can report DONE. Its `analysis-execution.json` contains the
+finalized experiment states; per-track archive snapshots can precede their own
+integrity check. A compact export is not a full circuit replay/checkpoint.
 
 The updater defaults to `QCENN_TASK_TIMEOUT_SECONDS=3600`,
 `QCENN_IDLE_TIMEOUT_SECONDS=1800`, and one bounded retry

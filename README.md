@@ -59,6 +59,12 @@ bash scripts/update_and_run_research.sh --status
 
 The updater creates immutable source and isolated environments. Results and
 separate per-experiment ZIPs are saved inside the original project's `results/`.
+Version 0.6.1 also writes **`archives/analysis.zip`**, the compact file to share
+for model review. It keeps reports, measured counts, predictions, splits/seeds,
+frozen settings, resources, task receipts and selected raw memory examples.
+Large logs, QPY circuit binaries, pretrained weights and redundant caches are
+omitted from ZIPs. Original files stay on the host. Each ZIP has a CRC check,
+SHA256 sidecar and an included-file/omission manifest; log tails are bounded.
 CPU/GPU workers share bounded resources. GPU selection uses the supported Aer
 runtime option; actual CUDA qualification is still required on the execution
 machine. Unsupported wide circuits remain on CPU MPS.
@@ -81,6 +87,17 @@ can take substantially longer than a smoke test. `DONE` means requested work and
 archives completed; scientific metrics and target achievement are separate.
 Exit 2 means MNIST fit/stability gates blocked testing. Source/configuration
 changes require a fresh run; existing evidence is never silently relabeled.
+
+To make a compact export of an existing finished run without rerunning models:
+
+```bash
+.venv-qcenn/bin/python -m qcenn_qml.analysis_archive \
+  --run-root results/EXISTING_RUN \
+  --output results/EXISTING_RUN/archives/analysis.zip
+```
+
+Use the current installed environment for this export command. The ZIP is for
+analysis, while resuming computation uses the original full run directory.
 
 ## MNIST accuracy protocol
 
