@@ -16,7 +16,9 @@ Diffusion is retired; no diffusion jobs or WikiText downloads are launched.
 Downloads public dataset snapshots and creates separate Python environments.
 No system Python, GPU driver, running checkout or existing result is upgraded
 in place. --replace-run stops ONLY the verified old experiment tree.
-CPU and GPU workers share bounded resources; each experiment gets a native ZIP.
+CPU and GPU workers share bounded resources; each experiment gets a compact
+analysis ZIP and archives/analysis.zip combines the useful evidence. Full logs,
+circuit binaries and unused weights stay on the host instead of in the ZIPs.
 Exit 0 DONE; 2 execution finished with blocked scientific gates; 1 FAILED;
 130 INTERRUPTED. Full Smol pretrained weights/training remain unimplemented.
 EOF

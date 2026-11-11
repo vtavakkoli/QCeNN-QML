@@ -127,22 +127,14 @@ def _validate_model(name, path, code):
     return 'DONE' if code == 0 else 'FAILED'
 
 
-def _archive(root, name):
-    # Arguments are separate from shell code. Native ZIP/CRC/SHA tools, no
-    # serialized Python wrapper and no unverified "DONE" marker.
-    script = '''set -euo pipefail
-cd -- "$1"
-zip -1 -qr "archives/$2.partial.zip" "experiments/$2" "logs/$2.log" "status/$2.json" "commands/$2.txt" runtime.json
-unzip -tqq "archives/$2.partial.zip"
-mv -- "archives/$2.partial.zip" "archives/$2.zip"
-cd archives
-sha256sum "$2.zip" > "$2.zip.sha256"
-'''
-    partial = root / 'archives' / (name + '.partial.zip')
-    if partial.exists():
-        partial.rename(partial.with_name(name + f'.abandoned-{time.time_ns()}.zip'))
-    stream = (root / 'logs' / (name + '-archive.log')).open('a')
-    process = subprocess.Popen(['bash', '-c', script, 'qcenn-archive', str(root), name],
+def _archive(root, name=None):
+    label = name or 'analysis'
+    command = [sys.executable, '-m', 'qcenn_qml.analysis_archive', '--run-root', str(root),
+        '--output', str(root / 'archives' / (label + '.zip'))]
+    if name is not None:
+        command.extend(['--experiment', name])
+    stream = (root / 'logs' / (label + '-archive.log')).open('a')
+    process = subprocess.Popen(command,
         stdout=stream, stderr=subprocess.STDOUT, pass_fds=inherited_run_descriptors(), start_new_session=True)
     return process, stream, time.monotonic()
 
@@ -167,7 +159,7 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     diffusion_examples = int(os.environ.get('QCENN_DIFFUSION_EXAMPLES', '256')) if corpus_files and not smoke else None
     configuration = {'smoke': smoke, 'only': only, 'corpus_files': [str(Path(p).resolve()) for p in corpus_files] if corpus_files else None,
         'runner_schema': 2, 'selection_mode': 'equal_shot', 'image_batch_size': 1, 'case_batch_size': 1,
-        'diffusion_retired': True, 'mnist_accuracy_profile': True,
+        'diffusion_retired': True, 'mnist_accuracy_profile': True, 'archive_policy': 'model-analysis-v1',
         'text_corpus_file': str(text_corpus), 'text_corpus_sha256': hashlib.sha256(text_corpus.read_bytes()).hexdigest(),
         'text_new_tokens': text_new_tokens, 'data_root': data_root, 'diffusion_examples': diffusion_examples}
     manifest = initialize(root, configuration, provenance(), resume)
@@ -227,6 +219,7 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
     active, archives, streams, short_specs = {}, {}, [], {}
     began = time.time()
     overall, exit_code, interrupted = 'RUNNING', 0, False
+    analysis_archive = {'state': 'PENDING', 'path': 'archives/analysis.zip'}
     def snapshot():
         now = time.time()
         details = []
@@ -247,7 +240,8 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
         state = {'state': overall, 'execution_complete': overall in TERMINAL,
             'output_dir': str(root), 'started_at': began, 'updated_at': now,
             'elapsed_seconds': now-began, 'jobs': states, 'scheduler_progress': details,
-            'cpu_budget': cpus, 'shared_worker_slots': jobs, 'finished_at': now if overall in TERMINAL else None}
+            'cpu_budget': cpus, 'shared_worker_slots': jobs, 'analysis_archive': analysis_archive,
+            'finished_at': now if overall in TERMINAL else None}
         write_json(root / 'run-state.json', state)
         lines = [f'State: {overall}', f'Output: {root}', f'Elapsed: {now-began:.0f}s',
             f'CPU budget: {cpus}; shared worker slots: {jobs}; one thread per quantum worker',
@@ -258,7 +252,8 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
             write_json(root / 'status' / (name + '.json'), row)
         for row in details:
             lines.append(f'{row["path"]}: {row["counts"]}')
-        lines.append('DONE requires reports, complete requested measurements, native ZIP CRC checks and SHA256 receipts.')
+        lines.append(f'Combined analysis ZIP: {analysis_archive["state"]}; archives/analysis.zip')
+        lines.append('DONE requires reports, complete requested measurements, all analysis ZIP CRC checks and SHA256 receipts.')
         if overall == 'DONE_WITH_BLOCKED_TESTS':
             lines.append('Execution finished. MNIST scientific gates blocked testing; no test result was invented.')
         target = root / 'STATUS.txt'; temporary = target.with_suffix('.tmp')
@@ -383,7 +378,22 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
         stream.close(); archives.pop('summary'); states['summary']['archive'] = 'DONE' if code == 0 else 'FAILED'
         failed = any(r['execution'] == 'FAILED' or r['archive'] != 'DONE' for r in states.values())
         blocked = any(r['execution'] == 'BLOCKED' for r in states.values())
-        overall, exit_code = ('FAILED', 1) if failed else (('DONE_WITH_BLOCKED_TESTS', 2) if blocked else ('DONE', 0))
+        scientific_outcome, outcome_code = ('FAILED', 1) if failed else (('DONE_WITH_BLOCKED_TESTS', 2) if blocked else ('DONE', 0))
+        # The combined export captures finalized per-experiment receipts, rather
+        # than the summary's unavoidable pre-archive snapshot of itself.
+        write_json(root / 'analysis-execution.json', {'jobs': states,
+            'scientific_execution_outcome': scientific_outcome,
+            'full_pretrained_smol_implemented': False, 'archive_policy': 'model-analysis-v1'})
+        analysis_archive['state'] = 'ARCHIVING'; snapshot()
+        process, stream, _ = _archive(root)
+        archives['analysis'] = (process, stream, time.monotonic())
+        try:
+            code = process.wait(timeout=3600)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5); code = 124
+        stream.close(); archives.pop('analysis')
+        analysis_archive.update(state='DONE' if code == 0 else 'FAILED', exit_code=code)
+        overall, exit_code = (scientific_outcome, outcome_code) if code == 0 else ('FAILED', 1)
     except KeyboardInterrupt:
         overall, exit_code, interrupted = 'INTERRUPTED', 130, True
     except BaseException:
@@ -414,6 +424,8 @@ def run(root, *, smoke=False, only='all', cpus=None, jobs=None, corpus_files=Non
         for row in states.values():
             if row['execution'] in ('RUNNING', 'PENDING'):
                 row['execution'] = 'INTERRUPTED' if interrupted else 'FAILED'
+        if analysis_archive['state'] in ('PENDING', 'ARCHIVING'):
+            analysis_archive['state'] = 'INTERRUPTED' if interrupted else 'FAILED'
         for sig, handler in handlers.items():
             signal.signal(sig, handler)
         snapshot()

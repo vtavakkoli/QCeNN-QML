@@ -149,3 +149,11 @@ def test_runner_resume_restores_data_root_and_reuses_measured_counts(tmp_path):
     assert restored.returncode == first.returncode, restored.stdout + restored.stderr
     assert all(hashlib.sha256(p.read_bytes()).hexdigest() == value for p, value in measured.items())
     assert json.loads((root / 'runtime.json').read_text())['data_root'] == str(tmp_path / 'explicit-cache')
+    state = json.loads((root / 'run-state.json').read_text())
+    assert state['analysis_archive']['state'] == 'DONE'
+    import zipfile
+    with zipfile.ZipFile(root / 'archives/analysis.zip') as archive:
+        assert archive.testzip() is None
+        assert 'analysis-execution.json' in archive.namelist()
+        assert not any(name.endswith(('.qpy', '.log', '.safetensors')) for name in archive.namelist())
+        assert json.loads(archive.read('analysis-execution.json'))['jobs']['summary']['archive'] == 'DONE'

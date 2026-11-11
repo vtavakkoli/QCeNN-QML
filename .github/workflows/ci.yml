@@ -31,6 +31,17 @@ jobs:
           case "$qcenn_study_code" in 0|2) ;; *) exit "$qcenn_study_code" ;; esac
           bash scripts/run_research_studies.sh --status results/ci/studies
           for archive in results/ci/studies/archives/*.zip; do unzip -t "$archive"; done
+          python - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+          root = Path('results/ci/studies')
+          state = json.loads((root / 'run-state.json').read_text())
+          assert state['analysis_archive']['state'] == 'DONE'
+          with zipfile.ZipFile(root / 'archives/analysis.zip') as archive:
+              assert 'analysis-execution.json' in archive.namelist()
+              assert not any(name.endswith(('.qpy', '.log', '.safetensors', '.pt', '.pth')) for name in archive.namelist())
+              assert json.loads(archive.read('analysis-execution.json'))['jobs']['summary']['archive'] == 'DONE'
+          PY
       - run: python -m qcenn_qml.mnist --dataset digits-proxy --classes 01 --train-per-class 1 --test-per-class 1 --shots 128 --iterations 0 --output-dir results/ci/mnist
       - name: Coherent text CLI smoke (small raw corpus)
         run: >-
@@ -45,7 +56,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: recurrent-digits-proxy-smoke
-          path: results/ci/recurrent
+          path: results/ci/recurrent/report.json
 
       - name: Reversible signed quantum softmax attention
         run: python -m qcenn_qml.quantum_attention --shots 2048 --output-dir results/ci/attention
@@ -60,5 +71,12 @@ jobs:
         if: always()
         with:
           name: qcenn-qml-all-simulator-results
-          path: results/ci/
+          path: |
+            results/ci/studies/archives/*.zip
+            results/ci/studies/archives/*.sha256
+            results/ci/summary/*.json
+            results/ci/summary/*.md
+            results/ci/attention/report.json
+            results/ci/recurrent/report.json
+            results/ci/smol-audit/report.json
           if-no-files-found: warn
